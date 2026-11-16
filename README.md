@@ -3,7 +3,7 @@
 **Is your place becoming harder to live in?**
 Rising heat and missing water, measured with 45 years of NASA data.
 
-### [▶ Try the demo](https://github.com/Gitjms0/Earth-Trend-Detective---NASA-SPACE-APPS-PROJECT/)
+### [▶ Try the demo](https://gitjms0.github.io/Earth-Trend-Detective---NASA-SPACE-APPS-PROJECT/)
 
 A project by **Pachamama Data Lab** for the NASA Space Apps Challenge 2026, challenge *Be an Earth System Trend Detective*.
 
