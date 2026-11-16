@@ -1,0 +1,62 @@
+[
+  {
+    "id": "lima",
+    "file": "lima.json",
+    "kind": {
+      "es": "Ciudad",
+      "en": "City"
+    },
+    "place": {
+      "lat": -12.05,
+      "lon": -77.04,
+      "label": {
+        "es": "Lima, Perú",
+        "en": "Lima, Peru"
+      }
+    },
+    "story": {
+      "es": "El calor sube con evidencia clara y el aire se seca año tras año. El agua, en cambio, no muestra cambio: en Lima la amenaza es el calor.",
+      "en": "Heat is rising with clear evidence and the air gets drier year after year. Water, however, shows no change: in Lima the threat is heat."
+    }
+  },
+  {
+    "id": "ica",
+    "file": "ica.json",
+    "kind": {
+      "es": "Zona agrícola",
+      "en": "Farming area"
+    },
+    "place": {
+      "lat": -14.07,
+      "lon": -75.73,
+      "label": {
+        "es": "Ica, Perú (valle agrícola)",
+        "en": "Ica, Peru (farming valley)"
+      }
+    },
+    "story": {
+      "es": "Las dos amenazas a la vez: el calor sentido sube más rápido que la propia temperatura, y los datos muestran además suelo más húmedo, con la cautela del salto de 2015.",
+      "en": "Both threats at once: felt heat rises faster than temperature itself, and the data also show wetter soil, with the caveat of the 2015 jump."
+    }
+  },
+  {
+    "id": "oroya",
+    "file": "oroya.json",
+    "kind": {
+      "es": "Ruta de montaña",
+      "en": "Mountain road"
+    },
+    "place": {
+      "lat": -11.52,
+      "lon": -75.9,
+      "label": {
+        "es": "La Oroya, Perú (Carretera Central)",
+        "en": "La Oroya, Peru (Central Highway)"
+      }
+    },
+    "story": {
+      "es": "En la Carretera Central solo la temperatura media alcanza evidencia clara; el calor sentido y la lluvia apenas insinúan un aumento. A esta altura el frío domina buena parte del año, y una sola variable positiva no basta para afirmar que el lugar cambió.",
+      "en": "On the Central Highway only the average temperature reaches clear evidence; felt heat and rainfall merely hint at an increase. At this altitude cold dominates much of the year, and a single positive variable is not enough to claim the place has changed."
+    }
+  }
+]

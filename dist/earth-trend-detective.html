@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Trend Detective</title>
+<meta name="description" content="Is your place becoming harder to live in? Heat and water trends from 45 years of NASA POWER data.">
+<!-- Structure only: styles live in css/style.css and logic in js/ (entry point: js/app.js). -->
+<!-- Leaflet (flat map) and Globe.gl (3D globe) load from a CDN; if they fail, the app carries on with what it has. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/*
+ * style.css — Styles for Earth Trend Detective.
+ *
+ * Visual system (values taken from the Tailwind CSS scale):
+ *   - "Slate" neutrals for text and surfaces; a single accent colour (blue).
+ *   - Strong colour is reserved for the data: the stripes and the verdicts.
+ *   - The background carries a graticule of meridians and parallels, like a map
+ *     sheet, on a light sky-blue background: fine lines at 10 % and major lines
+ *     at 22 %. It reads as texture
+ *     without competing with the data, which sits on white cards on top.
+ *   - Spacing in multiples of 4 px; radii of 8 px (controls) and 12 px (cards).
+ * Designed mobile-first; grows to tablet and desktop through breakpoints
+ * at 560, 768 and 1024 px.
+ */
+:root {
+  --bg: #cde9f8;        /* light sky blue: between sky-100 and sky-200 */
+  --bg-panel: #f8fafc;  /* slate-50: inner background of the chapters */
+  --card: #ffffff;
+  --ink: #0f172a;       /* slate-900 */
+  --ink-2: #475569;     /* slate-600 */
+  --ink-3: #64748b;     /* slate-500 */
+  --line: #e2e8f0;      /* slate-200 */
+  --line-soft: #f1f5f9; /* slate-100 */
+  --accent: #2563eb;    /* blue-600  */
+  --accent-dark: #1d4ed8;
+  --hero: #0b1220;
+  --teal: #9ff3e6;      /* the aqua green of the team logo */
+  --grid: rgb(3 105 161 / 0.10);       /* fine lines every 40 px (sky-700) */
+  --grid-major: rgb(3 105 161 / 0.22); /* major lines every 160 px, stronger */
+  /* Cards on the sky blue: blue border and bluish shadow so they stand out. */
+  --card-border: #93c5fd;               /* blue-300 */
+  --card-shadow: 0 1px 2px rgb(30 64 175 / 0.08), 0 6px 18px rgb(30 64 175 / 0.12);
+  --radius: 12px;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.08);
+  --shadow-lift: 0 1px 2px rgb(15 23 42 / 0.05), 0 4px 12px rgb(15 23 42 / 0.07);
+  /* Climate stripes: the same gradient in the brand, on the hero edge
+     and anywhere the page needs to recall what it is about. */
+  --stripes: linear-gradient(90deg, #2166ac 0 25%, #92c5de 25% 50%, #f4a582 50% 75%, #b2182b 75%);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; color: var(--ink);
+  background-color: var(--bg);
+  /* Graticule (parallels and meridians) on two levels, like a map sheet:
+     major lines every 160 px and fine ones every 40 px, over a soft light veil. */
+  background-image:
+    repeating-linear-gradient(0deg, var(--grid-major) 0 1px, transparent 1px 160px),
+    repeating-linear-gradient(90deg, var(--grid-major) 0 1px, transparent 1px 160px),
+    repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 40px),
+    radial-gradient(120% 70% at 50% 0%, rgb(255 255 255 / 0.35) 0%, rgb(255 255 255 / 0) 60%);
+  font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+.wrap {
+  max-width: 768px; margin: 0 auto;
+  padding: 0 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+main.wrap { padding-top: 16px; padding-bottom: 64px; }
+h2 { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 12px; }
+h3 { font-size: 1.125rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+h4 { font-size: 1rem; font-weight: 600; margin: 0; }
+p { margin: 0; }
+.muted { color: var(--ink-3); }
+.small { font-size: 0.8125rem; }
+strong { font-weight: 600; }
+
+/* ---------- Header ----------
+ * A night sky with the limb of a globe coming in from the right: a few
+ * star points, very faint concentric rings (the globe's graticule) and the
+ * blue halo of dawn. It closes with the climate stripes.
+ */
+.hero {
+  position: relative;
+  color: #e2e8f0; padding: 20px 0 32px;
+  background-color: var(--hero);
+  background-image:
+    radial-gradient(1.5px 1.5px at 11% 22%, rgb(255 255 255 / 0.55), transparent 100%),
+    radial-gradient(1.5px 1.5px at 27% 9%, rgb(255 255 255 / 0.4), transparent 100%),
+    radial-gradient(1px 1px at 41% 31%, rgb(255 255 255 / 0.45), transparent 100%),
+    radial-gradient(1.5px 1.5px at 63% 14%, rgb(255 255 255 / 0.35), transparent 100%),
+    radial-gradient(1px 1px at 78% 38%, rgb(255 255 255 / 0.5), transparent 100%),
+    radial-gradient(1.5px 1.5px at 92% 12%, rgb(255 255 255 / 0.3), transparent 100%),
+    radial-gradient(1px 1px at 55% 72%, rgb(255 255 255 / 0.3), transparent 100%),
+    repeating-radial-gradient(circle at 112% -15%, transparent 0 62px, rgb(159 243 230 / 0.07) 62px 63px),
+    radial-gradient(120% 140% at 85% -20%, #1e3a8a 0%, rgb(30 58 138 / 0) 55%);
+}
+/* The climate stripes close the header: the data, as a border. */
+.hero::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--stripes);
+}
+.hero-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 32px; }
+/* Top left, the team signs: its seal (without letters) and its name. */
+.brand { display: flex; align-items: center; gap: 10px; font-size: 0.9375rem; font-weight: 600; letter-spacing: 0.02em; color: #e2e8f0; margin: 0; }
+.brand-seal { width: 40px; height: 40px; display: block; }
+/* The project name sits above the headline, with a small planet Earth.
+   The planet is our own SVG drawing (no third-party rights, no external files). */
+.eyebrow { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); }
+.eyebrow-earth { width: 24px; height: 24px; flex: none; display: block; }
+/* Headline and intro span the full width, aligned with the search bar. */
+.hero h1 { font-size: clamp(1.75rem, 6vw, 2.5rem); line-height: 1.15; letter-spacing: -0.025em; font-weight: 700; color: #fff; margin: 0 0 12px; }
+.intro { color: #94a3b8; margin-bottom: 24px; }
+
+/* ---------- Controls ---------- */
+.search { display: flex; flex-wrap: wrap; gap: 8px; }
+.search input {
+  flex: 1 1 200px; min-width: 0; padding: 12px 14px; font: inherit; color: var(--ink);
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+}
+#birth { flex: 1 1 180px; }
+.search input::placeholder { color: #64748b; }
+.search input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+button {
+  padding: 12px 20px; border: 0; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer;
+  color: #fff; background: var(--accent); transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+button:hover { background: var(--accent-dark); }
+button.ghost, .chips button { background: #fff; color: var(--ink); border: 1px solid var(--card-border); box-shadow: var(--shadow); }
+button.ghost:hover, .chips button:hover { background: #eff6ff; border-color: var(--accent); }
+.ghost-dark { padding: 6px 12px; font-size: 0.8125rem; font-weight: 500; color: #cbd5e1; background: transparent; border: 1px solid rgb(148 163 184 / 0.4); }
+.ghost-dark:hover { background: rgb(148 163 184 / 0.15); }
+
+/* ---------- Map and example cases ---------- */
+/* ---------- Picking the place: 3D globe or flat map ---------- */
+.geo { position: relative; margin: 8px 0 24px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--hero); box-shadow: var(--shadow-lift); overflow: hidden; }
+/* CSS sets the height: globe.js reads it from the container on resize. */
+#globe, #map { height: clamp(260px, 48vw, 420px); }
+#globe { cursor: grab; }
+#globe:active { cursor: grabbing; }
+.geo-zoom { position: absolute; right: 12px; top: 12px; z-index: 500; display: grid; gap: 6px; }
+.geo-zoom button, .geo-toggle {
+  background: rgba(10, 18, 32, 0.72); border: 1px solid rgba(148, 163, 184, 0.35); color: #e2e8f0;
+  backdrop-filter: blur(6px); font-weight: 500; transition: background-color 150ms ease-out;
+}
+.geo-zoom button { width: 34px; height: 32px; padding: 0; font-size: 1rem; line-height: 1; }
+.geo-zoom button:hover, .geo-toggle:hover { background: rgba(37, 99, 235, 0.85); }
+.geo-toggle { position: absolute; right: 12px; bottom: 12px; z-index: 500; padding: 7px 12px; font-size: 0.8125rem; }
+.demos { margin-bottom: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.chips button { padding: 8px 14px; font-weight: 500; text-align: left; line-height: 1.35; border-left: 4px solid var(--accent); }
+/* Loose text on the sky blue: a darker grey so it reads with enough contrast. */
+main > .muted, .case-head .muted, .case > .muted { color: var(--ink-2); }
+.chips button span { display: block; font-size: 0.75rem; color: var(--ink-3); font-weight: 400; }
+
+/* ---------- Notices ---------- */
+.loading, .error { padding: 12px 16px; border-radius: 8px; background: #fff; border: 1px solid var(--card-border); margin: 8px 0; box-shadow: var(--shadow); }
+.error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+
+/* ---------- Case file ---------- */
+.case-head { margin: 24px 0 16px; }
+.case-head h2 { font-size: 1.5rem; letter-spacing: -0.02em; margin-bottom: 4px; }
+.summary { margin-top: 10px; font-size: 1.125rem; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
+.story { margin-top: 12px; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--ink-2); font-size: 1.0625rem; }
+/* Rows live inside a chapter and take its colour (--tint). */
+.row { background: var(--card); border: 1px solid color-mix(in srgb, var(--tint, #64748b) 25%, #fff); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.row header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+/* Verdict: ui.js sets the colour through the --vc variable. */
+.verdict {
+  --vc: #64748b; color: var(--vc); background: color-mix(in srgb, var(--vc) 10%, #fff);
+  border-radius: 999px; padding: 4px 12px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+}
+.verdict.small { font-size: 0.6875rem; padding: 2px 8px; }
+.stripes { display: flex; height: 64px; border-radius: 8px; overflow: hidden; }
+.stripes i { flex: 1; }
+.stripe-axis { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.75rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rate { margin-top: 12px; font-size: 1.125rem; font-variant-numeric: tabular-nums; }
+.rate .muted { font-size: 0.875rem; }
+.help { margin-top: 2px; font-size: 0.875rem; }
+.caveat { margin-top: 8px; padding: 8px 12px; border-left: 3px solid #f59e0b; background: #fffbeb; color: #78350f; font-size: 0.875rem; border-radius: 0 8px 8px 0; }
+.birth { margin-top: 12px; padding: 10px 12px; background: #eff6ff; border-radius: 8px; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+.birth-tag { display: block; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-dark); }
+.note { display: block; color: var(--ink-3); font-size: 0.8125rem; }
+details { margin-top: 12px; }
+details p { margin-top: 8px; font-size: 0.9375rem; color: var(--ink-2); }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: 0.875rem; }
+.chart { width: 100%; height: auto; margin-top: 12px; }
+.chart text { font-size: 11px; fill: var(--ink-3); }
+.chart .axis { stroke: var(--line); }
+.chart .series { fill: none; stroke: #334155; stroke-width: 1.5; }
+.chart .trend { stroke: #b2182b; stroke-width: 2; stroke-dasharray: 6 4; }
+.method { background: #fff; border: 1px solid var(--card-border); border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--card-shadow); }
+
+/* ---------- Tools and comparison ---------- */
+#tools { margin: 16px 0 24px; display: grid; gap: 12px; }
+#tools .chips { margin-bottom: 0; }
+.compare { margin-top: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.compare table { width: 100%; min-width: 440px; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; font-size: 0.875rem; box-shadow: var(--card-shadow); font-variant-numeric: tabular-nums; }
+.compare th, .compare td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: top; }
+.compare thead th { font-size: 0.75rem; font-weight: 600; color: #1e40af; }
+.compare thead th, .compare thead td { background: #eff6ff; }
+.compare tbody th { font-weight: 500; }
+.compare tr:last-child th, .compare tr:last-child td { border-bottom: 0; }
+.compare tr.opposite { background: #fffbeb; }
+.compare tr.opposite td:last-child { font-weight: 600; color: #b45309; }
+.compare td:last-child { color: var(--ink-3); }
+@media (max-width: 480px) { .compare th, .compare td { padding: 8px; font-size: 0.8125rem; } }
+
+/* ---------- Chapters: each one is a closed block with its own colour ---------- */
+/* Border and shadow take the chapter colour: each block stands out from the sky-blue
+   background and is recognised by its colour (red heat, teal water, blue others). */
+.chapter {
+  --tint: #1d4ed8; --tint-soft: #eff6ff; margin: 28px 0;
+  border: 1px solid color-mix(in srgb, var(--tint) 35%, #fff); border-top: 5px solid var(--tint);
+  border-radius: var(--radius); background: #fff; overflow: hidden;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--tint) 12%, transparent), 0 8px 22px color-mix(in srgb, var(--tint) 18%, transparent);
+}
+.chapter[data-chapter="heat"] { --tint: #b91c1c; --tint-soft: #fef2f2; }
+.chapter[data-chapter="water"] { --tint: #0e7490; --tint-soft: #ecfeff; }
+.chapter-head { padding: 16px 18px; background: var(--tint-soft); border-bottom: 1px solid color-mix(in srgb, var(--tint) 20%, #fff); }
+.chapter-head h3 { display: flex; align-items: center; gap: 9px; color: var(--tint); }
+.chapter-icon { font-size: 1.3rem; line-height: 1; }
+.chapter-q { color: var(--ink-2); margin-top: 2px; font-size: 0.9375rem; }
+.chapter-body { padding: 16px 18px 18px; background: color-mix(in srgb, var(--tint) 4%, #fff); }
+.chapter-body > .row:first-child { margin-top: 0; }
+.chips-verdict { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.chips-verdict .verdict { text-transform: none; letter-spacing: 0; font-size: 0.75rem; background: #fff; }
+.row.featured { border-color: color-mix(in srgb, var(--tint) 45%, #fff); border-left: 4px solid var(--tint); box-shadow: 0 2px 10px color-mix(in srgb, var(--tint) 14%, transparent); }
+.row:not(.featured) { box-shadow: none; }
+details.more { margin: 12px 0 0; }
+details.more > summary { padding: 8px 0; }
+details.more[open] { padding-bottom: 4px; }
+/* Advice: a grid of large icons with very little text. */
+.advice { margin-top: 14px; background: #fff; border: 1px solid color-mix(in srgb, var(--tint) 25%, #fff); border-radius: var(--radius); padding: 14px 16px; }
+.advice h4 { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tint); margin: 0 0 12px; }
+.actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.actions li { display: flex; flex-direction: column; gap: 6px; padding: 12px 10px; background: var(--tint-soft); border: 1px solid var(--line-soft); border-radius: 10px; font-size: 0.875rem; line-height: 1.3; text-align: center; align-items: center; }
+.act-icon { font-size: 1.75rem; line-height: 1; }
+.for-who { margin: 12px 0 0; font-size: 0.8125rem; color: var(--ink-3); }
+.for-who b { color: var(--ink-2); }
+details.why { margin-top: 8px; }
+details.why > summary { font-size: 0.8125rem; }
+details.why .context { margin-top: 8px; }
+
+/* The folded chapter (extra indicators) looks like a discreet row. */
+.chapter.folded { padding: 14px 18px; background: #fff; }
+.chapter.folded > summary { font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chapter.folded .chapter-body { margin: 10px -18px -14px; }
+
+/* ---------- Adapting to each screen ----------
+ * Narrow phone: one column and full-width controls.
+ * Tablet: the base layout already fits on one row.
+ * Desktop: a slightly longer reading measure and larger body text.
+ */
+
+/* Phone (≤ 560 px) */
+@media (max-width: 560px) {
+  .hero { padding: 16px 0 24px; }
+  .hero-top { margin-bottom: 24px; }
+  .intro { margin-bottom: 20px; }
+  /* The search bar stacks: each field full width, no cut-off text. */
+  #search, #compare-form { display: grid; grid-template-columns: 1fr; }
+  .row, .advice { padding: 14px; }
+  .chapter-head, .chapter-body { padding-left: 14px; padding-right: 14px; }
+  .chapter.folded { padding-left: 14px; padding-right: 14px; }
+  .chapter.folded .chapter-body { margin-left: -14px; margin-right: -14px; }
+  .case-head h2 { font-size: 1.3125rem; }
+  .summary { font-size: 1.0625rem; }
+  .story { font-size: 1rem; }
+  .chips button { flex: 1 1 140px; }
+  .stripes { height: 56px; }
+}
+
+/* Touch screens: no control shorter than 44 px. */
+@media (pointer: coarse) {
+  .geo-zoom { gap: 8px; }
+  .geo-zoom button { width: 44px; height: 44px; font-size: 1.125rem; }
+  .geo-toggle { padding: 11px 14px; }
+  summary { padding: 4px 0; }
+  .chips button { padding: 11px 14px; }
+  .ghost-dark { padding: 10px 14px; }
+}
+
+/* Phone in landscape: the globe must not take up the whole screen. */
+@media (max-height: 540px) and (orientation: landscape) {
+  #globe, #map { height: 68vh; }
+  .hero { padding-bottom: 20px; }
+}
+
+/* Tablet (≥ 640 px) */
+@media (min-width: 640px) {
+  .actions { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
+  .chapter-head, .chapter-body { padding-left: 20px; padding-right: 20px; }
+}
+
+/* Desktop and large tablet (≥ 1024 px) */
+@media (min-width: 1024px) {
+  body { font-size: 17px; }
+  .wrap { max-width: 860px; }
+  .hero { padding: 24px 0 40px; }
+  main.wrap { padding-top: 24px; }
+  /* At this size the headline fits on a single full-width line. */
+  .hero h1 { font-size: 2.25rem; }
+  .stripes { height: 72px; }
+}
+
+/* Whoever asks for less motion does not get it. */
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-top">
+      <p class="brand"><img id="brand-seal" class="brand-seal" alt="" width="40" height="40"><span>Pachamama Data Lab</span></p>
+      <button id="lang" type="button" class="ghost-dark"></button>
+    </div>
+    <p class="eyebrow">
+      <!-- Hand-drawn planet Earth: ocean, continents, graticule and highlight. -->
+      <svg class="eyebrow-earth" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <radialGradient id="earth-ocean" cx="35%" cy="30%" r="75%">
+            <stop offset="0%" stop-color="#7cc4ff"/><stop offset="55%" stop-color="#2563eb"/><stop offset="100%" stop-color="#0b2a6b"/>
+          </radialGradient>
+          <clipPath id="earth-clip"><circle cx="32" cy="32" r="29"/></clipPath>
+        </defs>
+        <circle cx="32" cy="32" r="29" fill="url(#earth-ocean)"/>
+        <g clip-path="url(#earth-clip)">
+          <g fill="#4ade80">
+            <path d="M14 14C20 9 30 10 33 14C35 18 30 20 28 24C26 27 22 26 20 29C17 27 13 24 12 20C11 17 12 15 14 14Z"/>
+            <path d="M27 32C31 31 35 33 35 37C35 42 32 46 30 52C28 54 27 50 27 46C26 42 24 37 27 32Z"/>
+            <path d="M46 20C51 19 56 22 58 27C59 32 56 36 53 40C51 44 48 46 47 42C46 38 44 34 45 29C43 26 43 22 46 20Z"/>
+          </g>
+          <g fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="1.2">
+            <ellipse cx="32" cy="32" rx="29" ry="10"/><ellipse cx="32" cy="32" rx="12" ry="29"/><line x1="3" y1="32" x2="61" y2="32"/>
+          </g>
+          <circle cx="22" cy="18" r="11" fill="#ffffff" fill-opacity="0.16"/>
+        </g>
+        <circle cx="32" cy="32" r="29" fill="none" stroke="#9ff3e6" stroke-width="2"/>
+      </svg>
+      <span data-i18n="app.title">Earth Trend Detective</span>
+    </p>
+    <h1 data-i18n="app.tagline"></h1>
+    <p class="intro" data-i18n="app.intro"></p>
+    <form id="search" class="search">
+      <input id="q" type="search" list="places" autocomplete="off" data-i18n-placeholder="search.placeholder" data-i18n-aria="search.placeholder">
+      <datalist id="places"></datalist>
+      <input id="birth" type="number" inputmode="numeric" min="1900" max="2026" data-i18n-placeholder="search.birth" data-i18n-aria="search.birth">
+      <button type="submit" data-i18n="search.button"></button>
+    </form>
+  </div>
+</header>
+<main class="wrap">
+  <p id="map-hint" class="muted small" data-i18n="search.map"></p>
+  <div class="geo">
+    <div id="globe"></div>
+    <div id="map" hidden></div>
+    <div id="globe-zoom" class="geo-zoom">
+      <button id="zoom-in" type="button" data-i18n-aria="geo.zoomIn">+</button>
+      <button id="zoom-out" type="button" data-i18n-aria="geo.zoomOut">&minus;</button>
+    </div>
+    <button id="view-toggle" type="button" class="geo-toggle"></button>
+  </div>
+  <section class="demos">
+    <h2 data-i18n="demo.title"></h2>
+    <div id="demo-buttons" class="chips"></div>
+  </section>
+  <div id="status" aria-live="polite"></div>
+  <div id="case"></div>
+  <section id="tools" hidden>
+    <button id="download" type="button" class="ghost" data-i18n="case.download"></button>
+    <form id="compare-form" class="search">
+      <input id="q2" type="search" list="places2" autocomplete="off" data-i18n-placeholder="search.compare" data-i18n-aria="search.compare">
+      <datalist id="places2"></datalist>
+      <button type="submit" data-i18n="search.compare"></button>
+    </form>
+    <div id="compare-demos" class="chips"></div>
+  </section>
+  <div id="compare"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/globe.gl"></script>
+<script>window.__DEMOS__=[{"id":"lima","file":"lima.json","kind":{"es":"Ciudad","en":"City"},"place":{"lat":-12.05,"lon":-77.04,"label":{"es":"Lima, Perú","en":"Lima, Peru"}},"story":{"es":"El calor sube con evidencia clara y el aire se seca año tras año. El agua, en cambio, no muestra cambio: en Lima la amenaza es el calor.","en":"Heat is rising with clear evidence and the air gets drier year after year. Water, however, shows no change: in Lima the threat is heat."},"fetchedAt":"2026-11-14","api":"NASA POWER Monthly and Annual API v2.10.0, community AG, 1981-2025","parsed":{"T2M":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[17.753,18.187,19.306,17.703,17.392,17.749,18.562,17.682,17.519,17.882,17.958,18.383,18.153,18.12,17.869,17.576,19.227,18.892,17.535,17.745,17.869,18.392,18.319,18.063,17.995,18.112,17.637,17.696,18.201,18.002,17.793,18.346,18.035,18.415,19.024,18.907,18.537,18.24,18.682,18.489,18.11,17.62,19.367,18.94,18.424]},"T2M_MAX":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[23.585,24.147,25.157,23.585,23.398,23.683,24.634,23.673,23.404,24.16,24.327,24.327,23.978,23.948,23.806,23.758,24.98,24.672,23.343,23.747,23.737,24.29,24.238,24.076,24.093,23.968,23.654,23.603,24.028,24.081,23.828,24.371,23.834,24.118,25.003,24.912,24.363,24.034,24.734,24.638,23.944,23.784,25.548,25.137,24.323]},"PRECTOTCORR":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[0.142,0.081,0.041,0.053,0.227,0.075,0.038,0.046,0.041,0.034,0.039,0.046,0.052,0.041,0.057,0.055,0.052,0.263,0.069,0.083,0.093,0.043,0.033,0.074,0.027,0.054,0.026,0.032,0.032,0.028,0.033,0.038,0.026,0.021,0.143,0.095,0.155,0.195,0.073,0.074,0.087,0.101,0.123,0.098,0.467]},"GWETROOT":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[0.388,0.388,0.383,0.384,0.393,0.384,0.384,0.385,0.383,0.381,0.384,0.383,0.385,0.383,0.384,0.385,0.382,0.392,0.385,0.385,0.389,0.383,0.38,0.382,0.382,0.383,0.382,0.382,0.382,0.382,0.381,0.381,0.381,0.38,0.389,0.388,0.391,0.392,0.388,0.387,0.388,0.388,0.39,0.388,0.407]},"RH2M":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[69.745,69.082,70.911,70.488,70.181,67.94,69.148,70.131,69.164,68.742,69.188,68.953,70.411,70.788,70.888,69.609,70.736,71.028,70.662,69.963,69.122,69.169,69.011,69.543,68.151,69.605,68.343,69.742,68.778,67.337,67.85,68.084,66.293,66.915,67.707,66.808,67.843,67.802,67.088,66.614,67.092,66.256,70.696,68.22,69.596]},"ALLSKY_SFC_SW_DWN":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[null,null,null,17.157,18.629,17.347,17.198,17.165,18.215,17.888,17.28,17.596,17.646,17.361,18.596,18.018,18.517,18.524,19.318,18.058,17.637,17.424,18.099,17.815,17.591,17.907,17.479,17.693,17.007,17.649,17.929,17.36,18.54,17.161,16.681,18.825,18.048,17.785,17.766,18.321,17.812,18.222,17.749,17.543,17.976]},"HEATIDX":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[23.702588,24.283677,26.034538,23.712292,23.512278,23.781397,24.796423,23.800375,23.505129,24.293238,24.637849,24.745783,24.12428,24.097698,23.949389,23.881939,25.294109,25.568024,23.459941,23.876063,23.854575,24.43532,24.379003,24.383022,24.215525,24.10326,23.756913,23.721805,24.155456,24.358148,23.933347,24.506029,23.919138,24.22564,25.165237,25.551793,24.494999,24.148852,24.874528,25.001335,24.045072,23.866159,26.047488,25.933252,24.475015]}},"heatIndex":"Computed with the NOAA heat index formula from the monthly values of T2M_MAX and RH2M."},{"id":"ica","file":"ica.json","kind":{"es":"Zona agrícola","en":"Farming area"},"place":{"lat":-14.07,"lon":-75.73,"label":{"es":"Ica, Perú (valle agrícola)","en":"Ica, Peru (farming valley)"}},"story":{"es":"Las dos amenazas a la vez: el calor sentido sube más rápido que la propia temperatura, y los datos muestran además suelo más húmedo, con la cautela del salto de 2015.","en":"Both threats at once: felt heat rises faster than temperature itself, and the data also show wetter soil, with the caveat of the 2015 jump."},"fetchedAt":"2026-11-14","api":"NASA POWER Monthly and Annual API v2.10.0, community AG, 1981-2025","parsed":{"T2M":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[18.283,18.762,19.311,18.157,17.968,18.369,19.005,18.134,18.133,18.433,18.311,18.587,18.342,18.37,18.064,17.944,19.118,18.887,17.716,18.131,18.34,18.718,18.757,18.48,18.478,18.644,18.162,18.02,18.677,18.503,18.276,18.774,18.785,19,19.313,19.374,18.93,18.826,19.246,19.135,18.699,18.388,19.579,19.588,18.795]},"T2M_MAX":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[26.475,27.017,27.62,26.427,25.892,26.353,27.552,26.336,26.278,26.543,26.998,27.003,26.599,26.541,26.243,26.592,27.241,26.69,25.698,26.253,26.487,26.757,27.037,26.747,26.96,26.986,26.411,26.398,26.92,26.935,26.474,27.197,27.068,27.354,27.532,27.482,26.865,26.969,27.279,27.4,27.096,27.048,27.943,28.019,26.818]},"PRECTOTCORR":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[0.227,0.103,0.03,0.145,0.284,0.226,0.074,0.125,0.105,0.082,0.058,0.051,0.128,0.117,0.127,0.136,0.207,0.451,0.317,0.113,0.103,0.111,0.107,0.116,0.078,0.149,0.17,0.147,0.162,0.113,0.201,0.198,0.13,0.111,0.488,0.333,0.459,0.434,0.397,0.316,0.446,0.365,0.381,0.499,1.094]},"GWETROOT":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[0.381,0.376,0.373,0.378,0.385,0.383,0.377,0.377,0.377,0.378,0.375,0.373,0.377,0.377,0.377,0.378,0.378,0.386,0.386,0.378,0.379,0.377,0.375,0.377,0.376,0.378,0.378,0.379,0.377,0.378,0.378,0.381,0.377,0.378,0.391,0.384,0.396,0.393,0.388,0.383,0.397,0.388,0.39,0.393,0.445]},"RH2M":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[57.775,56.588,58.422,59.298,59.191,56.221,56.751,59,57.788,57.099,57.667,56.731,59.346,60.351,60.283,59.053,59.867,61.237,62.162,60.4,58.963,59.104,57.947,58.809,56.448,58.907,57.966,59.221,58.35,56.855,58.178,57.911,55.333,55.409,57.478,56.221,58.548,58.144,57.248,56.837,57.273,55.255,60.462,58.602,62.489]},"ALLSKY_SFC_SW_DWN":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[null,null,null,20.517,22.321,22.113,22.498,22.253,23.203,23.467,23.302,23.173,21.677,22.367,23.11,23.593,23.235,23.308,22.964,22.582,23.079,23.319,23.767,23.361,23.492,23.103,23.347,22.976,22.859,23.253,23.14,22.936,23.521,23.416,22.826,24.151,22.784,22.838,22.849,23.053,23.343,23.432,21.822,22.514,22.657]},"HEATIDX":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[27.192321,27.780894,29.080648,27.043767,26.254533,26.697378,28.711757,27.054824,27.0211,27.007814,28.052003,27.869979,27.38515,27.468535,27.036746,27.350098,28.26861,27.87249,26.161422,26.821499,27.138084,27.610105,27.884953,27.72872,27.786982,28.022156,27.150566,27.026586,27.880595,27.788394,27.026464,28.234082,27.86699,28.098518,28.566411,28.468643,27.856362,27.891913,28.319985,28.495309,27.94535,27.625341,29.491858,29.616267,27.830824]}},"heatIndex":"Computed with the NOAA heat index formula from the monthly values of T2M_MAX and RH2M."},{"id":"oroya","file":"oroya.json","kind":{"es":"Ruta de montaña","en":"Mountain road"},"place":{"lat":-11.52,"lon":-75.9,"label":{"es":"La Oroya, Perú (Carretera Central)","en":"La Oroya, Peru (Central Highway)"}},"story":{"es":"En la Carretera Central solo la temperatura media alcanza evidencia clara; el calor sentido y la lluvia apenas insinúan un aumento. A esta altura el frío domina buena parte del año, y una sola variable positiva no basta para afirmar que el lugar cambió.","en":"On the Central Highway only the average temperature reaches clear evidence; felt heat and rainfall merely hint at an increase. At this altitude cold dominates much of the year, and a single positive variable is not enough to claim the place has changed."},"fetchedAt":"2026-11-14","api":"NASA POWER Monthly and Annual API v2.10.0, community AG, 1981-2025","parsed":{"T2M":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[8.646,8.552,9.232,8.153,8.047,8.258,9.052,8.811,8.352,8.714,8.813,9.121,8.637,8.653,9.044,8.678,9.107,9.799,8.42,8.597,8.532,8.87,9.125,8.88,9.104,8.948,8.797,8.749,9.076,9.372,8.764,8.773,8.902,9.103,9.076,9.223,9.082,8.648,9.248,9.386,8.971,9.121,9.633,10.039,8.957]},"T2M_MAX":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[18.948,18.577,20.031,17.876,18.122,18.273,19.402,19.008,18.726,19.158,19.204,20.122,18.953,18.918,19.112,18.832,19.354,19.314,18.341,18.124,18.082,18.745,18.781,18.727,19.395,18.8,18.737,18.673,19.235,19.471,18.874,18.816,18.816,19.343,19.207,19.385,18.969,18.124,19.091,19.585,18.606,19.523,19.531,20.122,18.096]},"PRECTOTCORR":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[0.448,0.452,0.133,0.511,0.542,0.355,0.336,0.329,0.312,0.225,0.239,0.205,0.423,0.373,0.461,0.447,0.467,0.749,0.598,0.572,0.528,0.42,0.363,0.414,0.333,0.467,0.348,0.351,0.342,0.316,0.387,0.377,0.317,0.325,0.677,0.631,0.702,0.788,0.725,0.687,0.672,0.422,0.579,0.604,1.322]},"GWETROOT":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[0.383,0.402,0.372,0.397,0.413,0.38,0.378,0.381,0.383,0.373,0.374,0.373,0.383,0.383,0.391,0.392,0.388,0.407,0.417,0.405,0.389,0.387,0.377,0.383,0.382,0.391,0.398,0.383,0.378,0.379,0.383,0.38,0.375,0.375,0.398,0.412,0.409,0.425,0.399,0.417,0.446,0.394,0.401,0.401,0.497]},"RH2M":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[74.402,74.932,72.975,75.382,74.44,74.088,73.164,73.602,73.363,73.497,72.288,71.561,74.358,73.823,73.758,74.008,73.744,74.493,74.808,74.567,74.923,74.557,73.87,74.063,72.98,74.133,74.591,73.254,73.971,72.709,74.027,73.186,73.74,73.439,74.459,73.83,75.471,76.101,74.757,74.382,75.845,72.713,75.496,75.054,78.477]},"ALLSKY_SFC_SW_DWN":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[null,null,null,16.701,17.15,17.098,18.313,17.092,17.704,17.648,18.307,17.801,16.438,17.207,18.193,17.434,17.988,17.933,17.082,16.826,16.775,16.565,17.251,16.799,17.677,17.165,17.162,17.398,17.145,17.699,17.343,17.361,17.387,17.287,17.611,18.636,17.056,17.056,17.181,17.543,17.457,17.816,17.109,16.863,16.725]},"HEATIDX":{"years":[1981,1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],"annual":[18.894883,18.512427,20.012882,17.781552,18.028258,18.182042,19.354727,18.947438,18.647702,19.103568,19.135906,20.089794,18.899567,18.855822,19.057973,18.767248,19.312424,19.280194,18.262306,18.031662,17.992569,18.683406,18.712067,18.657705,19.345322,18.73563,18.675103,18.590277,19.190258,19.421411,18.812123,18.739884,18.747119,19.296192,19.167759,19.345919,18.930716,18.051691,19.049143,19.563122,18.554101,19.47658,19.520793,20.135402,18.052959]}},"heatIndex":"Computed with the NOAA heat index formula from the monthly values of T2M_MAX and RH2M."}];
+(function(){
+/**
+ * power.js — Access to NASA POWER data (https://power.larc.nasa.gov).
+ *
+ * NASA POWER provides climate series for any coordinate on the planet, built from the
+ * MERRA-2 reanalysis and radiation products (SRB/CERES). The API is public:
+ * NO registration or API key required.
+ *
+ * Response format (verified on 2026-11-14, API v2.10.0):
+ *   properties.parameter.<CODE> = { "198101": 18.41, ..., "198113": 17.74, ... }
+ *   The key is YYYYMM; "month 13" is an annual summary, ignored here; -999 means "no data".
+ */
+
+const PARAMS = ['T2M', 'T2M_MAX', 'PRECTOTCORR', 'GWETROOT', 'RH2M', 'ALLSKY_SFC_SW_DWN'];
+const START_YEAR = 1981;
+const END_YEAR = 2025;
+const BASE = 'https://power.larc.nasa.gov/api/temporal/monthly/point';
+const FILL = -999;
+
+/**
+ * Builds the monthly query URL for one point.
+ * @param {number} lat latitude  @param {number} lon longitude
+ * @param {number} [startYear]  @param {number} [endYear]  @returns {string}
+ */
+function buildUrl(lat, lon, startYear = START_YEAR, endYear = END_YEAR) {
+  const q = new URLSearchParams({
+    parameters: PARAMS.join(','), community: 'AG',
+    longitude: String(lon), latitude: String(lat),
+    start: String(startYear), end: String(endYear), format: 'JSON',
+  });
+  return `${BASE}?${q}`;
+}
+
+/**
+ * Turns the API response into series ready to analyse.
+ * @param {object} json NASA POWER response  @param {string} param variable code
+ * @returns {{years:number[], annual:(number|null)[], byMonth:(number|null)[][]}}
+ *   annual[i] is the mean of the 12 months, or null if the year is missing any month;
+ *   byMonth[m][i] is the value of month m (0 = January) in year years[i].
+ */
+function parsePower(json, param) {
+  const d = json?.properties?.parameter?.[param];
+  if (!d) return { years: [], annual: [], byMonth: Array.from({ length: 12 }, () => []) };
+  const years = [...new Set(Object.keys(d).map((k) => Number(k.slice(0, 4))))].sort((a, b) => a - b);
+  const byMonth = Array.from({ length: 12 }, () => []);
+  const annual = [];
+  for (const y of years) {
+    let sum = 0, n = 0;
+    for (let m = 0; m < 12; m++) {
+      const raw = d[`${y}${String(m + 1).padStart(2, '0')}`];
+      const v = raw === undefined || raw === null || raw === FILL || !Number.isFinite(raw) ? null : raw;
+      byMonth[m].push(v);
+      if (v !== null) { sum += v; n++; }
+    }
+    // Rounded to 6 decimals: without this, two equal years differ in the last bit
+    // and the Mann-Kendall test does not recognise them as a tie.
+    annual.push(n === 12 ? Math.round((sum / 12) * 1e6) / 1e6 : null);
+  }
+  return { years, annual, byMonth };
+}
+
+/** Converts the full response: an object { CODE: series } with the 6 variables. */
+function parseAll(json) {
+  return Object.fromEntries(PARAMS.map((p) => [p, parsePower(json, p)]));
+}
+
+/**
+ * Downloads the data for one point. Rejects with Error('timeout' | 'network' | 'http <code>').
+ * @param {number} lat  @param {number} lon  @param {{timeoutMs?:number}} [opts]  @returns {Promise<object>}
+ */
+async function fetchPower(lat, lon, { timeoutMs = 20000 } = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(buildUrl(lat, lon), { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('timeout');
+    if (String(e.message).startsWith('http ')) throw e;
+    throw new Error('network');
+  } finally { clearTimeout(timer); }
+}
+
+/**
+ * catalog.js — What the tool measures and how it speaks to the user.
+ *
+ * Three pieces:
+ *   VARIABLES — each indicator, with its plain definition and unit.
+ *   CHAPTERS  — the two chapters (heat and water) plus the extra indicators. Each chapter
+ *               carries its question, the figure that explains why it matters, and what
+ *               each kind of user can do with the answer.
+ *   T / t     — every interface text, in Spanish and English.
+ *
+ * To add a variable: its code in power.js, an entry here and its chapter.
+ * To add a language: one more block in T with the same keys.
+ */
+
+const VARIABLES = [
+  {
+    code: 'HEATIDX', derived: true, unit: '°C', decimals: 2, palette: 'heat', source: 'MERRA-2 + NOAA',
+    name: { es: 'Calor sentido', en: 'Felt heat' },
+    short: { es: 'Calor sentido', en: 'Felt heat' },
+    what: {
+      es: 'Lo que el cuerpo siente: combina la temperatura máxima con la humedad del aire. Con humedad alta el sudor no evapora y el mismo calor hace más daño.',
+      en: 'What the body feels: it combines maximum temperature with air humidity. When humidity is high, sweat does not evaporate and the same heat does more harm.',
+    },
+    why: {
+      es: 'Es el número que usan los servicios meteorológicos para avisar cuándo el calor empieza a ser peligroso para la salud.',
+      en: 'It is the number weather services use to warn when heat starts to endanger health.',
+    },
+    caveat: {
+      es: 'Fórmula del NOAA sobre valores mensuales: mide cómo cambia el calor típico, no una tarde concreta. Tiende a quedar alto, porque junta la máxima del día con la humedad promedio de las 24 horas, y la humedad baja justo cuando aprieta el calor. En los meses fríos la fórmula se acerca a la temperatura del aire. Compara su tendencia con la de la temperatura máxima, aquí abajo.',
+      en: 'NOAA formula on monthly values: it measures how typical heat changes, not one specific afternoon. It tends to run high, because it pairs the day\'s maximum with the 24-hour average humidity, and humidity drops just when heat peaks. In cold months the formula comes close to air temperature. Compare its trend with that of maximum temperature, below.',
+    },
+  },
+  {
+    code: 'T2M_MAX', unit: '°C', decimals: 2, palette: 'heat', source: 'MERRA-2',
+    name: { es: 'Temperatura máxima', en: 'Maximum temperature' },
+    short: { es: 'Máxima', en: 'Maximum' },
+    what: { es: 'Promedio de la temperatura más alta de cada mes.', en: 'Average of the highest temperature reached each month.' },
+    why: { es: 'Marca los días en que el trabajo al aire libre y la salud de los más frágiles se complican.', en: 'It marks the days when outdoor work and the health of the most fragile get harder.' },
+  },
+  {
+    code: 'T2M', unit: '°C', decimals: 2, palette: 'heat', source: 'MERRA-2',
+    name: { es: 'Temperatura media', en: 'Average temperature' },
+    short: { es: 'Media', en: 'Average' },
+    what: { es: 'Qué tan caliente está el aire a 2 metros del suelo, en promedio de todo el año.', en: 'How warm the air is 2 meters above the ground, averaged over the whole year.' },
+    why: { es: 'Es el indicador base del calentamiento y el que mejor se compara con otras fuentes.', en: 'It is the baseline indicator of warming and the easiest to compare with other sources.' },
+  },
+  {
+    code: 'PRECTOTCORR', unit: 'mm/día', unitEn: 'mm/day', decimals: 2, palette: 'water', source: 'MERRA-2',
+    name: { es: 'Lluvia', en: 'Rainfall' },
+    short: { es: 'Lluvia', en: 'Rainfall' },
+    what: { es: 'Cuánta lluvia cae por día, en promedio del año.', en: 'How much rain falls per day, averaged over the year.' },
+    why: { es: 'De ella dependen los embalses, los pozos y los cultivos de secano.', en: 'Reservoirs, wells and rain-fed crops depend on it.' },
+    caveat: {
+      es: 'Ojo: en los datos de NASA POWER esta variable da un salto hacia 2015 en lugares muy distintos a la vez. Puede deberse a un cambio en cómo se generan los datos y no solo al clima; conviene contrastarla con estaciones locales.',
+      en: 'Caution: in NASA POWER data this variable jumps around 2015 in very different places at once. It may reflect a change in how the data are produced, not only the climate; check it against local stations.',
+    },
+  },
+  {
+    code: 'GWETROOT', unit: '(0–1)', decimals: 3, palette: 'water', source: 'MERRA-2',
+    name: { es: 'Humedad del suelo', en: 'Soil moisture' },
+    short: { es: 'Suelo', en: 'Soil' },
+    what: { es: 'Qué tan húmeda está la tierra donde crecen las raíces: 0 es seca, 1 es saturada.', en: 'How wet the soil is where roots grow: 0 is dry, 1 is saturated.' },
+    why: { es: 'Es el agua que de verdad llega a los cultivos, después de la evaporación.', en: 'It is the water that actually reaches crops, after evaporation.' },
+    caveat: {
+      es: 'Es humedad modelada, no medida en campo, y comparte el salto hacia 2015 de la lluvia. Úsala como indicio, no como prueba.',
+      en: 'This is modelled moisture, not measured in the field, and it shares the 2015 jump seen in rainfall. Use it as a hint, not as proof.',
+    },
+  },
+  {
+    code: 'RH2M', unit: '%', decimals: 1, palette: 'water', source: 'MERRA-2',
+    name: { es: 'Humedad del aire', en: 'Air humidity' },
+    short: { es: 'Humedad del aire', en: 'Air humidity' },
+    what: { es: 'Cuánto vapor de agua tiene el aire respecto del máximo que puede contener.', en: 'How much water vapor the air holds compared with the most it could hold.' },
+    why: { es: 'Entra en el cálculo del calor sentido y afecta la niebla, el riego y la corrosión.', en: 'It feeds the felt-heat calculation and affects fog, irrigation and corrosion.' },
+  },
+  {
+    code: 'ALLSKY_SFC_SW_DWN', unit: 'MJ/m²/día', unitEn: 'MJ/m²/day', decimals: 2, palette: 'sun', source: 'SRB / CERES',
+    name: { es: 'Energía solar', en: 'Solar energy' },
+    short: { es: 'Energía solar', en: 'Solar energy' },
+    what: { es: 'Cuánta energía del sol llega al suelo cada día, contando las nubes.', en: 'How much energy from the sun reaches the ground each day, clouds included.' },
+    why: { es: 'Define cuánto rinde un panel solar y refleja cambios en la nubosidad.', en: 'It sets how much a solar panel produces and reflects changes in cloud cover.' },
+  },
+];
+
+const VAR_BY_CODE = Object.fromEntries(VARIABLES.map((v) => [v.code, v]));
+
+/**
+ * The chapters of the case file. Their order is the order in which they are shown.
+ * `open` decides whether the chapter arrives expanded; `featured` is the variable shown
+ * in full, the other variables of the chapter stay folded below it.
+ */
+const CHAPTERS = [
+  {
+    id: 'heat', icon: '🔥', tint: '#b91c1c', open: true, featured: 'HEATIDX', codes: ['HEATIDX', 'T2M_MAX', 'T2M'],
+    name: { es: 'Calor', en: 'Heat' },
+    question: { es: '¿Hace más o menos calor que antes?', en: 'Hotter or cooler than before?' },
+    context: {
+      es: '2.410 millones de trabajadores están expuestos a calor excesivo y se le atribuyen unas 19.000 muertes laborales al año (OIT, 2024). En el verano de 2025, Europa vivió olas de calor con miles de muertes atribuidas (Imperial College y LSHTM, 2025).',
+      en: '2.41 billion workers are exposed to excessive heat, with some 19,000 work-related deaths a year attributed to it (ILO, 2024). In the summer of 2025, Europe saw heat waves with thousands of attributed deaths (Imperial College and LSHTM, 2025).',
+    },
+    actions: {
+      up: [
+        { icon: '🕐', es: 'Trabajo pesado al amanecer', en: 'Heavy work at dawn' },
+        { icon: '🥤', es: 'Agua y pausas a la sombra', en: 'Water and breaks in the shade' },
+        { icon: '🌳', es: 'Más sombra en calles y paraderos', en: 'More shade on streets and stops' },
+        { icon: '📣', es: 'Avisar a quien vive solo', en: 'Warn those who live alone' },
+      ],
+      down: [
+        { icon: '👀', es: 'El calor cede: seguir midiendo', en: 'Heat is easing: keep measuring' },
+      ],
+      none: [
+        { icon: '👍', es: 'Nada que cambiar por ahora', en: 'Nothing to change for now' },
+        { icon: '📅', es: 'Volver a mirar en unos años', en: 'Check back in a few years' },
+      ],
+    },
+    forWho: { es: 'Municipios · obra y transporte · salud y colegios', en: 'Municipalities · construction and transport · health and schools' },
+    means: [
+      {
+        who: { es: 'Municipio o defensa civil', en: 'Municipality or civil protection' },
+        line: { es: 'Sustentar un plan de calor: sombra en plazas y paraderos, horarios escolares, aviso a adultos mayores.', en: 'Back a heat plan: shade in squares and bus stops, school hours, warnings for older people.' },
+      },
+      {
+        who: { es: 'Empresa con personal al aire libre', en: 'Company with outdoor staff' },
+        line: { es: 'Mover cuadrillas a horas frescas, fijar pausas e hidratación, y sustentar la medida ante el comité de seguridad.', en: 'Move crews to cooler hours, set breaks and hydration, and justify it to the safety committee.' },
+      },
+      {
+        who: { es: 'Salud y colegios', en: 'Health services and schools' },
+        line: { es: 'Ajustar campañas y calendario al calor que hoy es normal, no al de hace treinta años.', en: 'Align campaigns and calendars with the heat that is normal today, not that of thirty years ago.' },
+      },
+    ],
+  },
+  {
+    id: 'water', icon: '💧', tint: '#0e7490', open: true, featured: 'PRECTOTCORR', codes: ['PRECTOTCORR', 'GWETROOT'],
+    name: { es: 'Agua', en: 'Water' },
+    question: { es: '¿Hay más o menos agua que antes?', en: 'More or less water than before?' },
+    context: {
+      es: 'Cerca de 4.000 millones de personas sufren escasez severa de agua al menos un mes al año (Mekonnen y Hoekstra, 2016, recogido por UN-Water). Bogotá estuvo un año en racionamiento, de abril de 2024 a abril de 2025.',
+      en: 'About 4 billion people face severe water scarcity at least one month a year (Mekonnen and Hoekstra, 2016, cited by UN-Water). Bogotá was under rationing for a year, from April 2024 to April 2025.',
+    },
+    actions: {
+      up: [
+        { icon: '🌊', es: 'Revisar drenajes y cauces', en: 'Check drains and channels' },
+        { icon: '🛣️', es: 'Cunetas y taludes en rutas', en: 'Ditches and slopes on roads' },
+        { icon: '🌱', es: 'Ajustar calendario de siembra', en: 'Adjust the sowing calendar' },
+      ],
+      down: [
+        { icon: '🚰', es: 'Plan de almacenamiento', en: 'Storage plan' },
+        { icon: '🔧', es: 'Cerrar fugas en la red', en: 'Close leaks in the network' },
+        { icon: '🌾', es: 'Cultivos de menor consumo', en: 'Lower-water crops' },
+      ],
+      none: [
+        { icon: '👍', es: 'Nada que cambiar por ahora', en: 'Nothing to change for now' },
+        { icon: '📅', es: 'Volver a mirar en unos años', en: 'Check back in a few years' },
+      ],
+    },
+    forWho: { es: 'Empresas de agua · agro · gobiernos locales', en: 'Water utilities · farming · local government' },
+    means: [
+      {
+        who: { es: 'Empresa de agua o municipio', en: 'Water utility or municipality' },
+        line: { es: 'Anticipar el racionamiento: revisar fuentes y almacenamiento antes de la próxima sequía larga.', en: 'Get ahead of rationing: review sources and storage before the next long drought.' },
+      },
+      {
+        who: { es: 'Agro y cooperativas', en: 'Farmers and cooperatives' },
+        line: { es: 'Elegir cultivo y decidir inversión en riego según cómo cambiaron la lluvia y la humedad del suelo.', en: 'Choose crops and decide on irrigation investment based on how rainfall and soil moisture changed.' },
+      },
+      {
+        who: { es: 'Gobierno regional u ONG', en: 'Regional government or NGO' },
+        line: { es: 'Adjuntar evidencia local medida a una solicitud de fondos de adaptación.', en: 'Attach measured local evidence to a request for adaptation funding.' },
+      },
+    ],
+  },
+  {
+    id: 'extra', icon: '☀️', tint: '#64748b', open: false, featured: null, codes: ['RH2M', 'ALLSKY_SFC_SW_DWN'],
+    name: { es: 'Otros indicadores', en: 'Other indicators' },
+    question: { es: 'Humedad del aire y energía solar', en: 'Air humidity and solar energy' },
+    context: null,
+    means: [],
+  },
+];
+
+const T = {
+  es: {
+    'app.title': 'Earth Trend Detective',
+    'app.tagline': '¿Tu lugar se está volviendo más duro para vivir?',
+    'app.intro': 'El calor que sube y el agua que falta, medidos con 45 años de datos de la NASA. Para quien tiene que decidir o sustentar algo: municipios, empresas, agro, salud y organizaciones locales.',
+    'search.placeholder': 'Ciudad o lugar (ej. Lima, Perú)',
+    'search.button': 'Investigar',
+    'search.birth': 'Tu año de nacimiento (opcional)',
+    'search.map': 'o toca un punto en el mapa plano',
+    'search.globe': 'Gira el globo y toca cualquier punto',
+    'geo.flat': 'Ver plano',
+    'geo.globe': 'Ver globo',
+    'geo.zoomIn': 'Acercar',
+    'geo.zoomOut': 'Alejar',
+    'search.compare': 'Comparar con otro lugar',
+    'demo.title': 'Casos de ejemplo',
+    'loading': 'Consultando datos de la NASA…',
+    'case.period': 'Datos de {from} a {to}',
+    'case.source': 'Fuente: NASA POWER ({source})',
+    'case.perDecade': 'por década',
+    'case.range': 'entre {lo} y {hi}',
+    'case.chart': 'Ver gráfica y detalle',
+    'case.what': 'Qué es',
+    'case.why': 'Por qué importa',
+    'case.download': 'Descargar ficha',
+    'case.noRate': 'No hay años suficientes para medir un cambio aquí.',
+    'case.stats': 'Detalle estadístico: {n} años con dato · Mann-Kendall p = {p} · parecido entre años seguidos r = {r1}',
+    'case.trendLine': 'La línea punteada es la tendencia (pendiente de Sen).',
+    'case.more': 'Ver las demás variables de este capítulo',
+    'case.means': 'Qué conviene hacer',
+    'case.forWho': 'Útil para',
+    'case.whyWorld': 'Por qué importa en el mundo',
+    'case.context': 'Contexto global, no es el dato de este lugar:',
+    'summary.both': 'Entre {from} y {to}, este lugar registra una variación con respaldo estadístico en el calor y también en el agua.',
+    'summary.heat': 'Entre {from} y {to}, este lugar registra una variación con respaldo estadístico en el calor. En el agua no se detecta una variación significativa.',
+    'summary.water': 'Entre {from} y {to}, este lugar registra una variación con respaldo estadístico en el agua. En el calor no se detecta una variación significativa.',
+    'summary.none': 'Entre {from} y {to}, no se detecta una variación con respaldo estadístico ni en el calor ni en el agua de este lugar.',
+    'verdict.yes': 'Sí está cambiando',
+    'verdict.yes.up': 'Sí, en aumento',
+    'verdict.yes.down': 'Sí, en descenso',
+    'verdict.maybe': 'Posible cambio',
+    'verdict.maybe.up': 'Posible aumento',
+    'verdict.maybe.down': 'Posible descenso',
+    'verdict.none': 'Sin evidencia de cambio',
+    'verdict.insufficient': 'Datos insuficientes',
+    'verdict.yes.help': 'Sería raro ver algo así por pura casualidad (menos de 5% de probabilidad).',
+    'verdict.maybe.help': 'Hay señales, pero todavía podría ser casualidad.',
+    'verdict.none.help': 'Los altibajos de año a año son mayores que cualquier tendencia.',
+    'verdict.insufficient.help': 'Se necesitan al menos 10 años con datos completos.',
+    'birth.title': 'Desde que naciste',
+    'birth.since': 'Entre {from}–{fromEnd} y {to0}–{to}: {diff}',
+    'birth.clamped': 'Los datos empiezan en {year}, así que comparamos desde ese año.',
+    'birth.tooRecent': 'Aún no hay suficientes años desde {year} para comparar (se necesitan 20).',
+    'birth.insufficient': 'No hay datos suficientes para esta comparación.',
+    'compare.title': 'Mismo planeta, historias distintas',
+    'compare.opposite': 'Tendencias opuestas',
+    'compare.same': 'Misma dirección',
+    'compare.unclear': 'Sin evidencia en al menos uno',
+    'error.notFound': 'No encontramos ese lugar. Prueba con otro nombre o toca el mapa.',
+    'error.api': 'No pudimos conectar con la NASA en este momento. Puedes abrir un caso de ejemplo mientras tanto.',
+    'error.noData': 'La NASA no tiene datos suficientes para ese punto (suele pasar en mar abierto o cerca de los polos). Prueba con un lugar en tierra.',
+    'error.search': 'El buscador de lugares no respondió. Intenta de nuevo o toca un punto en el mapa.',
+    'error.birth': 'El año de nacimiento debe estar entre 1900 y {max}.',
+    'method.title': 'Método y límites',
+    'method': 'Calculamos el promedio de cada año y aplicamos la prueba de Mann-Kendall para saber si la serie sube o baja de forma consistente. La tasa por década es la pendiente de Sen (la mediana de los cambios entre todos los pares de años), y el rango es su intervalo de confianza del 95%. Como los años seguidos se parecen entre sí, hacemos la prueba más exigente cuanto más se parecen. El calor sentido usa la fórmula del índice de calor del NOAA sobre los valores mensuales de temperatura máxima y humedad. Límites: cada punto representa una zona de unos 50 km, no una calle; los datos vienen de un reanálisis (observaciones combinadas con un modelo), no de un termómetro local; revisamos varias variables por lugar, así que por azar alguna puede dar positivo: un resultado aislado pesa menos que varios que apuntan en la misma dirección. El resumen de arriba solo afirma que un capítulo cambió cuando su variable principal lo confirma o cuando al menos dos de sus variables coinciden: una sola variable positiva entre varias puede serlo por azar. El rango del calor sentido es algo más estrecho de lo que debería: la fórmula del NOAA cambia de tramo a los 27 °C y eso introduce pequeños escalones en la serie. Esta herramienta mide lo que ya pasó: no es un pronóstico.',
+    'source': 'Datos: NASA POWER (MERRA-2, SRB/CERES). Mapa y globo: NASA GIBS y Blue Marble. Buscador: © OpenStreetMap.',
+    'disclaimer': 'Mide lo que ya pasó. No es un pronóstico.',
+    'lang.switch': 'English',
+  },
+  en: {
+    'app.title': 'Earth Trend Detective',
+    'app.tagline': 'Is your place becoming harder to live in?',
+    'app.intro': 'Rising heat and missing water, measured with 45 years of NASA data. For people who have to decide or justify something: municipalities, companies, farming, health services and local organisations.',
+    'search.placeholder': 'City or place (e.g. Lima, Peru)',
+    'search.button': 'Investigate',
+    'search.birth': 'Your birth year (optional)',
+    'search.map': 'or tap a point on the flat map',
+    'search.globe': 'Spin the globe and tap any point',
+    'geo.flat': 'Flat map',
+    'geo.globe': 'Globe',
+    'geo.zoomIn': 'Zoom in',
+    'geo.zoomOut': 'Zoom out',
+    'search.compare': 'Compare with another place',
+    'demo.title': 'Example cases',
+    'loading': 'Asking NASA for data…',
+    'case.period': 'Data from {from} to {to}',
+    'case.source': 'Source: NASA POWER ({source})',
+    'case.perDecade': 'per decade',
+    'case.range': 'between {lo} and {hi}',
+    'case.chart': 'Show chart and detail',
+    'case.what': 'What it is',
+    'case.why': 'Why it matters',
+    'case.download': 'Download case file',
+    'case.noRate': 'There are not enough years to measure a change here.',
+    'case.stats': 'Statistical detail: {n} years with data · Mann-Kendall p = {p} · similarity between consecutive years r = {r1}',
+    'case.trendLine': 'The dashed line is the trend (Sen slope).',
+    'case.more': 'Show the other variables in this chapter',
+    'case.means': 'What to do about it',
+    'case.forWho': 'Useful for',
+    'case.whyWorld': 'Why it matters worldwide',
+    'case.context': 'Global context, not this place\'s data:',
+    'summary.both': 'Between {from} and {to}, this place shows a statistically supported change in both heat and water.',
+    'summary.heat': 'Between {from} and {to}, this place shows a statistically supported change in heat. No significant change is detected in water.',
+    'summary.water': 'Between {from} and {to}, this place shows a statistically supported change in water. No significant change is detected in heat.',
+    'summary.none': 'Between {from} and {to}, no statistically supported change is detected in either heat or water at this place.',
+    'verdict.yes': 'Yes, it is changing',
+    'verdict.yes.up': 'Yes, rising',
+    'verdict.yes.down': 'Yes, falling',
+    'verdict.maybe': 'Possible change',
+    'verdict.maybe.up': 'Possibly rising',
+    'verdict.maybe.down': 'Possibly falling',
+    'verdict.none': 'No evidence of change',
+    'verdict.insufficient': 'Not enough data',
+    'verdict.yes.help': 'It would be unusual to see this by pure coincidence (less than a 5% chance).',
+    'verdict.maybe.help': 'There are signs, but it could still be coincidence.',
+    'verdict.none.help': 'Year-to-year ups and downs are larger than any trend.',
+    'verdict.insufficient.help': 'At least 10 years of complete data are needed.',
+    'birth.title': 'Since you were born',
+    'birth.since': 'Between {from}–{fromEnd} and {to0}–{to}: {diff}',
+    'birth.clamped': 'The data start in {year}, so we compare from that year.',
+    'birth.tooRecent': 'There are not enough years since {year} to compare yet (20 are needed).',
+    'birth.insufficient': 'There is not enough data for this comparison.',
+    'compare.title': 'Same planet, different stories',
+    'compare.opposite': 'Opposite trends',
+    'compare.same': 'Same direction',
+    'compare.unclear': 'No evidence in at least one',
+    'error.notFound': 'We could not find that place. Try another name or tap the map.',
+    'error.api': 'We could not reach NASA right now. You can open an example case meanwhile.',
+    'error.noData': 'NASA does not have enough data for that point (common over open ocean or near the poles). Try a place on land.',
+    'error.search': 'The place search did not respond. Try again or tap a point on the map.',
+    'error.birth': 'Birth year must be between 1900 and {max}.',
+    'method.title': 'Method and limits',
+    'method': 'We average each year and apply the Mann-Kendall test to see whether the series rises or falls consistently. The rate per decade is the Sen slope (the median change across all pairs of years), and the range is its 95% confidence interval. Because consecutive years resemble each other, we make the test stricter the more they do. Felt heat uses the NOAA heat index formula on monthly maximum temperature and humidity. Limits: each point stands for an area about 50 km wide, not a street; the data come from a reanalysis (observations combined with a model), not a local thermometer; we check several variables per place, so one may come out positive by chance: a single result weighs less than several pointing the same way. The summary above only claims a chapter changed when its main variable confirms it or when at least two of its variables agree: a single positive among several can be chance. The felt-heat range is somewhat narrower than it should be: the NOAA formula switches branch at 27 °C, which introduces small steps in the series. This tool measures what already happened: it is not a forecast.',
+    'source': 'Data: NASA POWER (MERRA-2, SRB/CERES). Map and globe: NASA GIBS and Blue Marble. Search: © OpenStreetMap.',
+    'disclaimer': 'It measures what already happened. It is not a forecast.',
+    'lang.switch': 'Español',
+  },
+};
+
+/**
+ * Returns an interface text. Replaces {name} with vars.name.
+ * @param {'es'|'en'} lang  @param {string} key  @param {object} [vars]
+ */
+function t(lang, key, vars = {}) {
+  const s = (T[lang] || T.es)[key];
+  if (s === undefined) return key;
+  return s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? String(vars[k]) : `{${k}}`));
+}
+
+const unitOf = (variable, lang) => (lang === 'en' && variable.unitEn) || variable.unit;
+
+/**
+ * stats.js — Statistical engine (pure functions, no access to the page).
+ *
+ * Answers the core question of the challenge: is there a trend, and is it significant?
+ *   - mannKendall : non-parametric test for a monotonic trend (does it rise or fall consistently?).
+ *   - senSlope    : robust rate of change (median of the slopes between all pairs of years).
+ *   - linReg      : least-squares regression with 95% confidence interval and t-test.
+ *   - verdict     : turns the p-value into a plain-language verdict.
+ *   - analyze     : applies all of the above to an annual series.
+ */
+
+// --- Distributions ---
+function erf(x) { // Abramowitz-Stegun 7.1.26
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+const normCdf = (z) => 0.5 * (1 + erf(z / Math.SQRT2));
+
+function logGamma(x) { // Lanczos
+  const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let y = x, tmp = x + 5.5; tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (const cj of c) ser += cj / ++y;
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+function betaCf(a, b, x) { // continued fraction of the incomplete beta function
+  const EPS = 3e-12, FPMIN = 1e-300;
+  let qab = a + b, qap = a + 1, qam = a - 1, c = 1, d = 1 - qab * x / qap;
+  if (Math.abs(d) < FPMIN) d = FPMIN; d = 1 / d; let h = d;
+  for (let m = 1; m <= 200; m++) {
+    const m2 = 2 * m;
+    let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN; c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN; d = 1 / d; h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN; c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN; d = 1 / d;
+    const del = d * c; h *= del;
+    if (Math.abs(del - 1) < EPS) break;
+  }
+  return h;
+}
+function incBeta(a, b, x) {
+  if (x <= 0) return 0; if (x >= 1) return 1;
+  const bt = Math.exp(logGamma(a + b) - logGamma(a) - logGamma(b) + a * Math.log(x) + b * Math.log(1 - x));
+  return x < (a + 1) / (a + b + 2) ? bt * betaCf(a, b, x) / a : 1 - bt * betaCf(b, a, 1 - x) / b;
+}
+/** Two-sided p-value of a Student's t.
+ * @param {number} t t statistic  @param {number} df degrees of freedom  @returns {number} p between 0 and 1 */
+function tTwoSidedP(t, df) {
+  if (!Number.isFinite(t)) return 0;
+  return incBeta(df / 2, 0.5, df / (df + t * t));
+}
+/** Two-sided 95% critical value of Student's t (found by bisection).
+ * @param {number} df degrees of freedom */
+function tCrit95(df) {
+  let lo = 0, hi = 100;
+  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (tTwoSidedP(mid, df) > 0.05) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+/**
+ * Mann-Kendall test with tie and continuity corrections.
+ * S counts, for every pair of years, whether the later value is higher (+1) or lower (−1).
+ * @param {number[]} values series ordered in time, without gaps
+ * @returns {{S:number, varS:number, z:number, p:number, tau:number, n:number}} p is two-sided
+ */
+function mannKendall(values) {
+  const n = values.length;
+  let S = 0;
+  for (let i = 0; i < n - 1; i++) for (let j = i + 1; j < n; j++) S += Math.sign(values[j] - values[i]);
+  const counts = new Map();
+  for (const v of values) counts.set(v, (counts.get(v) || 0) + 1);
+  let tieTerm = 0;
+  for (const t of counts.values()) if (t > 1) tieTerm += t * (t - 1) * (2 * t + 5);
+  const varS = (n * (n - 1) * (2 * n + 5) - tieTerm) / 18;
+  let z = 0, p = 1;
+  if (S !== 0 && varS > 0) {
+    z = (S - Math.sign(S)) / Math.sqrt(varS);
+    p = Math.min(1, 2 * (1 - normCdf(Math.abs(z))));
+  }
+  const pairs = n * (n - 1) / 2;
+  return { S, varS, z, p, tau: pairs > 0 ? S / pairs : 0, n };
+}
+
+/** Slopes between all pairs of points, sorted from lowest to highest. */
+function pairwiseSlopes(years, values) {
+  const slopes = [];
+  for (let i = 0; i < years.length - 1; i++)
+    for (let j = i + 1; j < years.length; j++)
+      if (years[j] !== years[i]) slopes.push((values[j] - values[i]) / (years[j] - years[i]));
+  return slopes.sort((x, y) => x - y);
+}
+const median = (sorted) => { const m = sorted.length >> 1; return sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2; };
+
+/**
+ * Sen slope: median of the slopes between all pairs of points.
+ * A single extreme year does not distort it, unlike ordinary regression.
+ * @param {number[]} years  @param {number[]} values  @returns {number} change per year
+ */
+function senSlope(years, values) {
+  const slopes = pairwiseSlopes(years, values);
+  return slopes.length ? median(slopes) : 0;
+}
+
+/**
+ * 95% confidence interval of the Sen slope (Sen's method, 1968).
+ * Uses the same variance as Mann-Kendall, so the range and the verdict never contradict each other.
+ * @param {number[]} years  @param {number[]} values  @param {number} varS variance of S
+ * @returns {{slope:number, lo:number, hi:number}}
+ */
+function senInterval(years, values, varS) {
+  const slopes = pairwiseSlopes(years, values), N = slopes.length;
+  if (!N) return { slope: 0, lo: 0, hi: 0 };
+  const C = 1.959964 * Math.sqrt(Math.max(0, varS));
+  const clamp = (k) => Math.min(N - 1, Math.max(0, k));
+  return { slope: median(slopes), lo: slopes[clamp(Math.round((N - C) / 2) - 1)], hi: slopes[clamp(Math.round((N + C) / 2))] };
+}
+
+/**
+ * Lag-1 autocorrelation: how much each year resembles the previous one (between −1 and 1).
+ * @param {number[]} values  @returns {number}
+ */
+function lag1(values) {
+  const n = values.length;
+  if (n < 3) return 0;
+  const m = values.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { den += (values[i] - m) ** 2; if (i < n - 1) num += (values[i] - m) * (values[i + 1] - m); }
+  return den > 1e-12 ? num / den : 0;
+}
+
+/**
+ * Ordinary least-squares linear regression.
+ * @param {number[]} years  @param {number[]} values
+ * @returns {{slope:number, intercept:number, ciLo:number, ciHi:number, p:number}} 95% CI of the slope and t-test p
+ */
+function linReg(years, values) {
+  const n = years.length;
+  const mx = years.reduce((a, b) => a + b, 0) / n, my = values.reduce((a, b) => a + b, 0) / n;
+  let sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sxx += (years[i] - mx) ** 2; sxy += (years[i] - mx) * (values[i] - my); }
+  if (n < 3 || sxx === 0) return { slope: 0, intercept: my, ciLo: 0, ciHi: 0, p: 1 };
+  const slope = sxy / sxx, intercept = my - slope * mx;
+  let sse = 0;
+  for (let i = 0; i < n; i++) sse += (values[i] - (intercept + slope * years[i])) ** 2;
+  const df = n - 2, se = Math.sqrt(sse / df / sxx);
+  if (se < 1e-12 * Math.max(1, Math.abs(slope))) return { slope, intercept, ciLo: slope, ciHi: slope, p: slope === 0 ? 1 : 0 };
+  const half = tCrit95(df) * se;
+  return { slope, intercept, ciLo: slope - half, ciHi: slope + half, p: tTwoSidedP(slope / se, df) };
+}
+
+// --- Verdict ---
+const MIN_YEARS = 10;
+/**
+ * Plain-language verdict from the Mann-Kendall p-value.
+ * p < 0.05 → 'yes' · p < 0.20 → 'maybe' · otherwise → 'none' · fewer than MIN_YEARS years → 'insufficient'.
+ * @param {number} p  @param {number} n number of years with data
+ */
+function verdict(p, n) {
+  if (!(n >= MIN_YEARS) || !Number.isFinite(p)) return 'insufficient';
+  if (p < 0.05) return 'yes';
+  if (p < 0.20) return 'maybe';
+  return 'none';
+}
+
+/**
+ * Full analysis of an annual series. Years without data (null) are dropped.
+ *
+ * Autocorrelation correction: consecutive years resemble each other, which makes the test
+ * see "trends" where there are only runs. The lag-1 autocorrelation r1 of the detrended
+ * series is measured and, if positive, the variance of S is multiplied by (1 + r1) / (1 − r1).
+ * The result is a stricter test (higher p) the more persistent the series is.
+ *
+ * @param {number[]} years  @param {(number|null)[]} values
+ * @returns {{n:number, mk:object|null, sen:number, ci:{lo:number,hi:number}|null, intercept:number,
+ *            r1:number, reg:object|null, perDecade:number, verdict:string, years:number[], values:number[]}}
+ */
+function analyze(years, values) {
+  const ys = [], vs = [];
+  for (let i = 0; i < years.length; i++) {
+    const v = values[i];
+    if (v !== null && v !== undefined && Number.isFinite(v)) { ys.push(years[i]); vs.push(v); }
+  }
+  const n = ys.length;
+  if (n < MIN_YEARS) return { n, mk: null, sen: 0, ci: null, intercept: 0, r1: 0, reg: null, perDecade: 0, verdict: 'insufficient', years: ys, values: vs };
+
+  const mk = mannKendall(vs), sen = senSlope(ys, vs);
+  const resid = vs.map((v, i) => v - sen * ys[i]);
+  const r1 = Math.min(0.9, Math.max(0, lag1(resid)));
+  if (r1 > 0 && mk.varS > 0) {
+    mk.varS *= (1 + r1) / (1 - r1);
+    if (mk.S !== 0) {
+      mk.z = (mk.S - Math.sign(mk.S)) / Math.sqrt(mk.varS);
+      mk.p = Math.min(1, 2 * (1 - normCdf(Math.abs(mk.z))));
+    }
+  }
+  const { lo, hi } = senInterval(ys, vs, mk.varS);
+  const intercept = median([...resid].sort((x, y) => x - y));
+  return { n, mk, sen, ci: { lo, hi }, intercept, r1, reg: linReg(ys, vs), perDecade: sen * 10, verdict: verdict(mk.p, n), years: ys, values: vs };
+}
+
+/**
+ * birth.js — "Your climate since you were born".
+ *
+ * Compares the mean of the user's first 10 years of life with that of the 10 most
+ * recent years. It only uses measured data: it projects and forecasts nothing.
+ */
+
+
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+const valid = (v) => v !== null && v !== undefined && Number.isFinite(v);
+
+/**
+ * @param {number[]} years  @param {(number|null)[]} values annual series
+ * @param {number} birthYear year of birth  @param {number} [window=10] size of each window, in years
+ * @returns {{status:'ok'|'tooRecent'|'insufficient', fromYear:number|null, toYear:number|null,
+ *            clamped:boolean, early:number|null, recent:number|null, diff:number|null, verdict:string}}
+ *   clamped = true when the person was born before the first year with data.
+ */
+function sinceBirth(years, values, birthYear, window = 10) {
+  const empty = { status: 'insufficient', fromYear: null, toYear: null, clamped: false, early: null, recent: null, diff: null, verdict: 'insufficient' };
+  if (!Number.isFinite(birthYear)) return empty;
+  const firstIdx = values.findIndex(valid);
+  if (firstIdx < 0) return empty;
+  const firstYear = years[firstIdx], toYear = years[years.length - 1];
+  const fromYear = Math.max(Math.trunc(birthYear), firstYear);
+  const clamped = birthYear < firstYear;
+  const base = { ...empty, fromYear, toYear, clamped };
+  if (toYear - fromYear + 1 < 2 * window) return { ...base, status: 'tooRecent' };
+
+  const pick = (lo, hi) => values.filter((v, i) => years[i] >= lo && years[i] <= hi && valid(v));
+  const earlyVals = pick(fromYear, fromYear + window - 1);
+  const recentVals = pick(toYear - window + 1, toYear);
+  if (earlyVals.length < window / 2 || recentVals.length < window / 2) return base;
+
+  const ys = [], vs = [];
+  years.forEach((y, i) => { if (y >= fromYear) { ys.push(y); vs.push(values[i]); } });
+  const early = mean(earlyVals), recent = mean(recentVals);
+  return { ...base, status: 'ok', early, recent, diff: recent - early, verdict: analyze(ys, vs).verdict };
+}
+
+/**
+ * heat.js — Heat index (what the body feels), NOAA formula.
+ *
+ * Temperature alone does not tell how harmful heat is: with high humidity sweat does
+ * not evaporate and the body cannot cool down. The heat index combines temperature and
+ * relative humidity into a single number: "feels like X degrees".
+ *
+ * Formula: Rothfusz regression used by the US National Weather Service
+ * (NOAA), https://www.wpc.ncep.noaa.gov/html/heatindex_equation.shtml
+ * It is public domain. It works in degrees Fahrenheit, so we convert at the edges.
+ *
+ * Stated limits:
+ *  - The formula is meant for hot conditions (from about 27 °C). Below that threshold
+ *    NOAA uses a simpler expression, which is not the air temperature but a
+ *    combination of temperature and humidity very close to it (in cold weather it
+ *    can come out a couple of degrees lower).
+ *  - The switch between branches at 27 °C is not continuous, so averaging the twelve
+ *    months can produce small steps. The confidence range the app publishes comes out
+ *    somewhat narrower than it should.
+ *  - It pairs the day's maximum with the 24-hour average humidity, and humidity drops
+ *    just when heat peaks: the value tends to run high.
+ *  - It is a monthly "in the shade" value: it measures typical heat, not one specific afternoon.
+ */
+
+const toF = (c) => (c * 9) / 5 + 32;
+const toC = (f) => ((f - 32) * 5) / 9;
+
+/**
+ * Heat index at a given moment.
+ * @param {number} tempC air temperature in °C
+ * @param {number} rh relative humidity in % (0–100)
+ * @returns {number} apparent temperature in °C
+ */
+function heatIndexC(tempC, rh) {
+  if (!Number.isFinite(tempC) || !Number.isFinite(rh)) return NaN;
+  const T = toF(tempC);
+  const R = Math.min(100, Math.max(0, rh));
+
+  // Step 1: Steadman's simple formula, averaged with the temperature.
+  const simple = ((0.5 * (T + 61.0 + (T - 68.0) * 1.2 + R * 0.094)) + T) / 2;
+  if (simple < 80) return toC(simple); // cold regime: the index is close to the temperature
+
+  // Step 2: full Rothfusz regression.
+  let hi = -42.379 + 2.04901523 * T + 10.14333127 * R - 0.22475541 * T * R
+    - 0.00683783 * T * T - 0.05481717 * R * R + 0.00122874 * T * T * R
+    + 0.00085282 * T * R * R - 0.00000199 * T * T * R * R;
+
+  // Step 3: NOAA adjustments at the humidity extremes.
+  if (R < 13 && T >= 80 && T <= 112) hi -= ((13 - R) / 4) * Math.sqrt((17 - Math.abs(T - 95)) / 17);
+  else if (R > 85 && T >= 80 && T <= 87) hi += ((R - 85) / 10) * ((87 - T) / 5);
+
+  return toC(hi);
+}
+
+/**
+ * Annual heat-index series from the monthly series of maximum temperature and
+ * relative humidity. Each year is the mean of its 12 monthly indices;
+ * a year missing any month is left without a value.
+ *
+ * @param {{years:number[], byMonth:(number|null)[][]}} tmax T2M_MAX series
+ * @param {{years:number[], byMonth:(number|null)[][]}} rh RH2M series
+ * @returns {{years:number[], annual:(number|null)[], byMonth:(number|null)[][]}}
+ */
+function heatIndexSeries(tmax, rh) {
+  const years = tmax?.years || [];
+  const byMonth = Array.from({ length: 12 }, () => []);
+  const annual = [];
+  for (let i = 0; i < years.length; i++) {
+    // Humidity is looked up by year: the two series may start in different years.
+    const j = (rh?.years || []).indexOf(years[i]);
+    let sum = 0, n = 0;
+    for (let m = 0; m < 12; m++) {
+      const a = tmax?.byMonth?.[m]?.[i], b = j < 0 ? null : rh?.byMonth?.[m]?.[j];
+      const v = a === null || a === undefined || b === null || b === undefined ? null : heatIndexC(a, b);
+      const ok = v !== null && Number.isFinite(v);
+      byMonth[m].push(ok ? v : null);
+      if (ok) { sum += v; n++; }
+    }
+    annual.push(n === 12 ? Math.round((sum / 12) * 1e6) / 1e6 : null);
+  }
+  return { years, annual, byMonth };
+}
+
+/**
+ * model.js — Builds the "case" for a place: joins the data with the statistics.
+ * It is a pure function: it takes series and returns an object ready to draw,
+ * already arranged into the chapters the user sees.
+ */
+
+
+/**
+ * Adds to the set of series those computed from others.
+ * Today only felt heat, which needs the monthly series of maximum temperature and humidity.
+ * If they arrive already computed (as in the example cases), they are kept.
+ */
+function withDerived(parsed) {
+  if (!parsed || parsed.HEATIDX) return parsed || {};
+  const tmax = parsed.T2M_MAX, rh = parsed.RH2M;
+  if (!tmax?.byMonth || !rh?.byMonth) return parsed;
+  return { ...parsed, HEATIDX: heatIndexSeries(tmax, rh) };
+}
+
+/**
+ * @param {Object<string,{years:number[], annual:(number|null)[]}>} parsed series by variable code
+ * @param {{lat:number, lon:number, label:string}} place
+ * @param {number|null} birthYear year of birth, or null if not given
+ * @returns {{place:object, birthYear:number|null, period:{from:number|null,to:number|null},
+ *            rows:object[], chapters:object[], summary:string}}
+ *   Each row in rows carries { variable, years, annual, result, birth }.
+ *   chapters repeats those rows grouped: { chapter, rows, featured, others, state }.
+ */
+function buildCase(parsed, place, birthYear) {
+  const data = withDerived(parsed);
+  let from = null, to = null;
+
+  const rows = VARIABLES.map((variable) => {
+    const s = data?.[variable.code] || { years: [], annual: [] };
+    const result = analyze(s.years, s.annual);
+    if (result.years.length) {
+      from = from === null ? result.years[0] : Math.min(from, result.years[0]);
+      to = to === null ? result.years.at(-1) : Math.max(to, result.years.at(-1));
+    }
+    const birth = Number.isFinite(birthYear) ? sinceBirth(s.years, s.annual, birthYear) : null;
+    return { variable, years: s.years, annual: s.annual, result, birth };
+  });
+  const byCode = Object.fromEntries(rows.map((r) => [r.variable.code, r]));
+
+  const chapters = CHAPTERS.map((chapter) => {
+    const list = chapter.codes.map((c) => byCode[c]).filter(Boolean);
+    const featured = chapter.featured ? byCode[chapter.featured] : null;
+    return {
+      chapter,
+      rows: list,
+      featured: featured && featured.result.verdict !== 'insufficient'
+        ? featured
+        : (list.find((r) => r.result.verdict !== 'insufficient') || list[0] || null),
+      state: chapterState(list),
+      evidence: hasEvidence(featured, list),
+      direction: chapterDirection(featured, list),
+    };
+  });
+
+  const heat = chapters.find((c) => c.chapter.id === 'heat')?.evidence;
+  const water = chapters.find((c) => c.chapter.id === 'water')?.evidence;
+  const summary = heat && water ? 'summary.both'
+    : heat ? 'summary.heat'
+      : water ? 'summary.water' : 'summary.none';
+
+  return { place, birthYear: Number.isFinite(birthYear) ? birthYear : null, period: { from, to }, rows, chapters, summary };
+}
+
+/**
+ * Does the chapter have enough evidence to state it in the summary?
+ * Its main variable must confirm it, or at least two variables must agree: with
+ * five variables tested at 5%, a single positive one can be due to chance.
+ */
+function hasEvidence(featured, rows) {
+  if (featured?.result.verdict === 'yes') return true;
+  return rows.filter((r) => r.result.verdict === 'yes').length >= 2;
+}
+
+/**
+ * Where the chapter is heading: 'up', 'down' or null if nothing is clear.
+ * The main variable decides when it changes itself; otherwise, the majority of those that do.
+ */
+function chapterDirection(featured, rows) {
+  const moving = rows.filter((r) => r.result.verdict === 'yes' || r.result.verdict === 'maybe');
+  if (!moving.length) return null;
+  const pick = moving.includes(featured) ? [featured] : moving;
+  const sum = pick.reduce((a, r) => a + Math.sign(r.result.perDecade || 0), 0);
+  return sum > 0 ? 'up' : sum < 0 ? 'down' : null;
+}
+
+/** The strongest verdict in the chapter: if any variable changes, the chapter changes. */
+function chapterState(rows) {
+  const order = ['yes', 'maybe', 'none', 'insufficient'];
+  for (const v of order) if (rows.some((r) => r.result.verdict === v)) return v;
+  return 'insufficient';
+}
+
+/** Does the case have at least one variable with enough data? (false over open ocean or near the poles) */
+function hasData(model) {
+  return model.rows.some((r) => r.result.verdict !== 'insufficient');
+}
+
+/**
+ * geo.js — Place search.
+ *
+ * Two services, both free, keyless and based on OpenStreetMap:
+ *   - Photon (photon.komoot.io) for suggestions while typing, which is exactly
+ *     what it is built for.
+ *   - Nominatim to resolve a full name when the user did not pick a suggestion.
+ * If suggestions fail, search keeps working: they are two separate paths.
+ */
+
+/** Takes the first Nominatim result. @returns {{lat:number, lon:number, label:string}|null} */
+function parseGeocode(json) {
+  if (!Array.isArray(json) || !json.length) return null;
+  const r = json[0], lat = Number(r.lat), lon = Number(r.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon, label: r.display_name || `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
+}
+/** Searches a place by name. Empty text → null without using the network. @returns {Promise<{lat:number, lon:number, label:string}|null>} */
+async function searchPlace(query, lang = 'es') {
+  const q = (query || '').trim();
+  if (!q) return null;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=${lang}&q=${encodeURIComponent(q)}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000); // search must not leave the page waiting
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error('network');
+    return parseGeocode(await res.json());
+  } finally { clearTimeout(timer); }
+}
+
+/** Builds a readable label from the properties Photon returns. */
+function photonLabel(p) {
+  const parts = [p.name, p.city && p.city !== p.name ? p.city : null, p.state, p.country];
+  return [...new Set(parts.filter(Boolean))].join(', ');
+}
+
+/**
+ * Turns the Photon response into suggestions ready to show.
+ * @param {object} json  @returns {{lat:number, lon:number, label:string}[]}
+ */
+function parseSuggestions(json) {
+  const out = [], seen = new Set();
+  for (const f of json?.features || []) {
+    const [lon, lat] = f?.geometry?.coordinates || [];
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const label = photonLabel(f.properties || {});
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push({ lat, lon, label });
+  }
+  return out;
+}
+
+/**
+ * Suggestions for what the user has typed so far. Below 3 letters it does not query.
+ * Never throws: if the service fails, it returns an empty list and normal search carries on.
+ * @param {string} query  @param {'es'|'en'} lang  @param {{signal?:AbortSignal}} [opts]
+ * @returns {Promise<{lat:number, lon:number, label:string}[]>}
+ */
+async function suggestPlaces(query, lang = 'es', { signal } = {}) {
+  const q = (query || '').trim();
+  if (q.length < 3) return [];
+  const url = `https://photon.komoot.io/api/?limit=6&lang=${lang === 'es' ? 'es' : 'en'}&q=${encodeURIComponent(q)}`;
+  try {
+    const res = await fetch(url, { signal });
+    if (!res.ok) return [];
+    return parseSuggestions(await res.json());
+  } catch { return []; }
+}
+
+/**
+ * Name of a point from its coordinates, in the requested language.
+ * It serves two purposes: naming a point tapped on the globe or the map, and
+ * fetching the name again when the user switches the page language.
+ * Never throws: on failure it returns null and any existing name is kept.
+ * @param {number} lat  @param {number} lon  @param {'es'|'en'} lang
+ * @returns {Promise<string|null>}
+ */
+async function nameOfPoint(lat, lon, lang = 'es') {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&accept-language=${lang}&lat=${lat}&lon=${lon}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.display_name || null;
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
+/**
+ * The name of a place in the page language.
+ * Example places carry their name in both languages ({es, en}); searched places
+ * carry a single text, which is used as is.
+ * @param {{label: string|{es:string,en:string}}} place  @param {'es'|'en'} lang
+ */
+function labelOf(place, lang = 'es') {
+  const l = place?.label;
+  if (!l) return '';
+  return typeof l === 'string' ? l : (l[lang] || l.es || Object.values(l)[0] || '');
+}
+
+/**
+ * globe.js — The 3D globe used to pick a place.
+ *
+ * Uses Globe.gl (on top of three.js) with NASA's Blue Marble texture. A tap on any
+ * point returns its latitude and longitude, just like the flat map: for the rest of
+ * the app the two are interchangeable.
+ *
+ * If the library failed to load (no internet, or blocked), `createGlobe` returns
+ * null and the caller falls back to the flat map. Never throws.
+ */
+
+const TEXTURE = 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg';
+const MARK = '#fbbf24';   // the example places
+const PICK = '#60a5fa';   // the point the user picked
+
+/**
+ * @param {HTMLElement} el container; it sizes itself to the available width
+ * @param {{places?: object[], onPick?: (lat:number, lon:number, place?:object) => void, height?: number}} opts
+ *   places: places to mark, each { lat, lon, label }
+ *   onPick: called with the picked coordinates; if a marker was tapped, also with it
+ * @returns {{setMarks:Function, setPicked:Function, focus:Function, resize:Function, stopSpin:Function}|null}
+ */
+function createGlobe(el, { places = [], onPick = () => {}, height = 360 } = {}) {
+  if (typeof window === 'undefined' || !window.Globe || !el) return null;
+  let marks = places.map((p) => ({ lat: p.lat, lng: p.lon, place: p }));
+  let picked = null;
+
+  const all = () => (picked ? marks.concat([picked]) : marks);
+  const g = window.Globe()(el)
+    .globeImageUrl(TEXTURE)
+    .backgroundColor('rgba(0,0,0,0)')
+    .pointColor((d) => (d.sel ? PICK : MARK))
+    .pointAltitude((d) => (d.sel ? 0.08 : 0.035))
+    .pointRadius((d) => (d.sel ? 0.7 : 0.45))
+    .pointsData(all())
+    .ringColor(() => (t) => `rgba(251,191,36,${1 - t})`)
+    .ringMaxRadius(5).ringPropagationSpeed(1.6).ringRepeatPeriod(1400)
+    .ringsData(marks)
+    .onPointClick((d) => onPick(d.lat, d.lng, d.place))
+    .onGlobeClick((c) => onPick(c.lat, c.lng));
+
+  const c = g.controls();
+  c.autoRotate = true; c.autoRotateSpeed = 0.45;
+  c.enableZoom = true; c.minDistance = 130; c.maxDistance = 420;
+
+  const api = {
+    /** Changes the marked places (for example when switching language). */
+    setMarks(list) { marks = list.map((p) => ({ lat: p.lat, lng: p.lon, place: p })); g.ringsData(marks).pointsData(all()); },
+    /** Marks the picked point and stops the spin. */
+    setPicked(lat, lon) { picked = { lat, lng: lon, sel: true }; c.autoRotate = false; g.pointsData(all()); },
+    /** Moves the view to a point. */
+    focus(lat, lon, altitude = 1.1) { c.autoRotate = false; g.pointOfView({ lat, lng: lon, altitude }, 600); },
+    stopSpin() { c.autoRotate = false; },
+    /** Zooms in or out; f < 1 zooms in. */
+    zoom(f) { const p = g.pointOfView(); g.pointOfView({ ...p, altitude: Math.max(0.35, Math.min(2.6, p.altitude * f)) }, 400); },
+    /* The height is set by the CSS (#globe uses clamp), so it is read from the
+       container; `height` is only a fallback if the CSS does not define it. */
+    resize() { g.width(el.clientWidth).height(el.clientHeight || height); },
+  };
+  api.resize();
+  g.pointOfView({ lat: -10, lng: -70, altitude: 2.1 });
+  return api;
+}
+
+/**
+ * brand.js — The team seal, Pachamama Data Lab.
+ *
+ * Embedded as SVG so the downloadable case file does not depend on any external
+ * file: the image is generated the same way offline. The name is not drawn inside
+ * the seal because it would be unreadable at that size; the case file writes it
+ * next to it, in its own typeface.
+ */
+
+const TEAM = { name: 'Pachamama Data Lab', lines: ['PACHAMAMA', 'DATA LAB'] };
+
+const SEAL = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024" width="1024" height="1024"><defs><radialGradient id="bg" cx="50%" cy="45%" r="60%"><stop offset="0%" stop-color="#16244a"/><stop offset="100%" stop-color="#070b1c"/></radialGradient><radialGradient id="earth" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#2fb5a6"/><stop offset="55%" stop-color="#14647a"/><stop offset="100%" stop-color="#0a2a45"/></radialGradient><linearGradient id="trend" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#ffd23f"/><stop offset="100%" stop-color="#ff6b35"/></linearGradient><clipPath id="earthClip"><circle cx="512" cy="470" r="215"/></clipPath><clipPath id="lensClip"><circle cx="640" cy="560" r="105"/></clipPath></defs><circle cx="512" cy="512" r="500" fill="url(#bg)"/><circle cx="512" cy="512" r="488" fill="none" stroke="#ffd23f" stroke-width="6"/><circle cx="512" cy="512" r="455" fill="none" stroke="#3a1420" stroke-width="40"/><circle cx="512" cy="512" r="476" fill="none" stroke="#D91023" stroke-width="3"/><circle cx="512" cy="512" r="434" fill="none" stroke="#D91023" stroke-width="3"/><g><g transform="translate(967.0 512.0) rotate(90.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(961.4 583.2) rotate(99.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(944.7 652.6) rotate(108.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(917.4 718.6) rotate(117.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(880.1 779.4) rotate(126.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(833.7 833.7) rotate(135.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(779.4 880.1) rotate(144.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(718.6 917.4) rotate(153.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(652.6 944.7) rotate(162.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(583.2 961.4) rotate(171.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(512.0 967.0) rotate(180.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(440.8 961.4) rotate(189.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(371.4 944.7) rotate(198.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(305.4 917.4) rotate(207.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(244.6 880.1) rotate(216.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(190.3 833.7) rotate(225.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(143.9 779.4) rotate(234.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(106.6 718.6) rotate(243.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(79.3 652.6) rotate(252.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(62.6 583.2) rotate(261.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(57.0 512.0) rotate(270.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(62.6 440.8) rotate(279.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(79.3 371.4) rotate(288.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(106.6 305.4) rotate(297.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(143.9 244.6) rotate(306.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(190.3 190.3) rotate(315.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(244.6 143.9) rotate(324.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(305.4 106.6) rotate(333.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(371.4 79.3) rotate(342.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(440.8 62.6) rotate(351.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(512.0 57.0) rotate(360.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(583.2 62.6) rotate(369.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(652.6 79.3) rotate(378.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(718.6 106.6) rotate(387.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(779.4 143.9) rotate(396.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(833.7 190.3) rotate(405.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(880.1 244.6) rotate(414.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(917.4 305.4) rotate(423.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(944.7 371.4) rotate(432.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#D91023"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g><g transform="translate(961.4 440.8) rotate(441.0)"><path d="M0 -16 L5 -16 L5 -11 L10 -11 L10 -5 L15 -5 L15 5 L10 5 L10 11 L5 11 L5 16 L-5 16 L-5 11 L-10 11 L-10 5 L-15 5 L-15 -5 L-10 -5 L-10 -11 L-5 -11 L-5 -16 Z" fill="#ffd23f"/><rect x="-3" y="-3" width="6" height="6" fill="#070b1c"/></g></g><path d="M452 190 H572 V250 H632 V310 H692 V630 H632 V690 H572 V750 H452 V690 H392 V630 H332 V310 H392 V250 H452 Z" fill="none" stroke="#ffd23f" stroke-opacity="0.35" stroke-width="5" stroke-linejoin="miter"/><g stroke="#ffd23f" stroke-width="4" stroke-linecap="round"><line x1="802.0" y1="238.0" x2="818.0" y2="238.0"/><line x1="799.7" y1="249.5" x2="808.0" y2="252.9"/><line x1="793.2" y1="259.2" x2="804.5" y2="270.5"/><line x1="783.5" y1="265.7" x2="786.9" y2="274.0"/><line x1="772.0" y1="268.0" x2="772.0" y2="284.0"/><line x1="760.5" y1="265.7" x2="757.1" y2="274.0"/><line x1="750.8" y1="259.2" x2="739.5" y2="270.5"/><line x1="744.3" y1="249.5" x2="736.0" y2="252.9"/><line x1="742.0" y1="238.0" x2="726.0" y2="238.0"/><line x1="744.3" y1="226.5" x2="736.0" y2="223.1"/><line x1="750.8" y1="216.8" x2="739.5" y2="205.5"/><line x1="760.5" y1="210.3" x2="757.1" y2="202.0"/><line x1="772.0" y1="208.0" x2="772.0" y2="192.0"/><line x1="783.5" y1="210.3" x2="786.9" y2="202.0"/><line x1="793.2" y1="216.8" x2="804.5" y2="205.5"/><line x1="799.7" y1="226.5" x2="808.0" y2="223.1"/></g><circle cx="772" cy="238" r="24" fill="#ffd23f"/><circle cx="772" cy="238" r="15" fill="none" stroke="#ff6b35" stroke-width="3"/><path d="M764 238 h16 M772 230 v16" stroke="#ff6b35" stroke-width="3"/><path d="M300 238 C285 226 268 220 246 222 L256 228 L240 230 L252 234 L238 238 L262 240 C276 241 288 244 296 250 L300 256 L304 250 C312 244 324 241 338 240 L362 238 L348 234 L360 230 L344 228 L354 222 C332 220 315 226 300 238 Z" fill="#e8ecf5"/><circle cx="300" cy="236" r="4" fill="#ffffff"/><g fill="#ffffff"><circle cx="230" cy="260" r="2.5"/><circle cx="270" cy="700" r="2"/><circle cx="790" cy="720" r="2.5"/><circle cx="190" cy="460" r="1.6"/><circle cx="840" cy="470" r="1.6"/></g><circle cx="512" cy="470" r="215" fill="url(#earth)"/><g clip-path="url(#earthClip)" fill="none" stroke="#9ff3e6" stroke-opacity="0.35" stroke-width="2"><ellipse cx="512" cy="470" rx="215" ry="60"/><ellipse cx="512" cy="470" rx="215" ry="130"/><line x1="297" y1="470" x2="727" y2="470"/><ellipse cx="512" cy="470" rx="70" ry="215"/><ellipse cx="512" cy="470" rx="145" ry="215"/><line x1="512" y1="255" x2="512" y2="685"/></g><g clip-path="url(#earthClip)"><path d="M297 610 L360 545 L395 575 L450 500 L490 548 L530 470 L575 540 L610 515 L660 575 L700 545 L727 570 V700 H297 Z" fill="#0a2a45" stroke="#9ff3e6" stroke-width="3" stroke-linejoin="round"/><path d="M520 488 L530 470 L541 488 Z M442 512 L450 500 L459 512 Z" fill="#ffffff"/></g><circle cx="512" cy="470" r="215" fill="none" stroke="#9ff3e6" stroke-width="4"/><ellipse cx="512" cy="470" rx="300" ry="95" fill="none" stroke="#ffd23f" stroke-width="3" stroke-dasharray="14 8" transform="rotate(-18 512 470)"/><g transform="translate(268 420) rotate(-18)"><rect x="-14" y="-10" width="28" height="20" rx="3" fill="#e8ecf5" stroke="#070b1c" stroke-width="2"/><rect x="-56" y="-7" width="36" height="14" fill="#2fb5a6" stroke="#e8ecf5" stroke-width="2"/><rect x="20" y="-7" width="36" height="14" fill="#2fb5a6" stroke="#e8ecf5" stroke-width="2"/><line x1="0" y1="10" x2="0" y2="24" stroke="#e8ecf5" stroke-width="3"/><circle cx="0" cy="28" r="5" fill="#ffd23f"/></g><path d="M268 448 L330 560 L380 520 Z" fill="#ffd23f" fill-opacity="0.15"/><line x1="715" y1="638" x2="800" y2="725" stroke="#e8ecf5" stroke-width="26" stroke-linecap="round"/><line x1="715" y1="638" x2="800" y2="725" stroke="#ffd23f" stroke-width="10" stroke-linecap="round"/><circle cx="640" cy="560" r="105" fill="#070b1c" fill-opacity="0.85"/><g clip-path="url(#lensClip)"><g stroke="#2fb5a6" stroke-opacity="0.4" stroke-width="1.5"><line x1="535" y1="520" x2="745" y2="520"/><line x1="535" y1="560" x2="745" y2="560"/><line x1="535" y1="600" x2="745" y2="600"/><line x1="600" y1="455" x2="600" y2="665"/><line x1="640" y1="455" x2="640" y2="665"/><line x1="680" y1="455" x2="680" y2="665"/></g><polyline points="548,620 566,598 582,612 598,584 614,594 630,566 646,578 662,546 678,556 694,524 710,532 728,500" fill="none" stroke="#9ff3e6" stroke-width="3" stroke-linejoin="round"/><line x1="548" y1="622" x2="732" y2="500" stroke="url(#trend)" stroke-width="6" stroke-linecap="round"/><g fill="#ffd23f"><circle cx="566" cy="598" r="4"/><circle cx="614" cy="594" r="4"/><circle cx="662" cy="546" r="4"/><circle cx="710" cy="532" r="4"/></g></g><circle cx="640" cy="560" r="105" fill="none" stroke="#e8ecf5" stroke-width="12"/><circle cx="640" cy="560" r="105" fill="none" stroke="#ffd23f" stroke-width="4"/></svg>`;
+
+/** The seal as a data URI: used both in the header and in the downloadable case file. */
+const SEAL_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(SEAL)}`;
+
+let pending = null;
+/**
+ * The seal as an image ready to draw on a canvas.
+ * It is a data URI, so it does not taint the canvas and `toBlob` keeps working.
+ * @returns {Promise<HTMLImageElement|null>} null if the browser could not load it
+ */
+function sealImage() {
+  if (pending) return pending;
+  pending = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = SEAL_URI;
+  });
+  return pending;
+}
+
+/**
+ * ui.js — Drawing of the case file: stripes, verdicts, chart, comparison and image.
+ *
+ * The calculation functions (stripeColors, formatRate, compareRows) are pure and can be tested on their own.
+ * The render* functions write HTML into a container. Every text that comes from outside
+ * (for example, the place name) goes through esc() to prevent HTML injection.
+ */
+
+
+const PALETTES = {
+  heat: ['#2166ac', '#f7f7f7', '#b2182b'],
+  water: ['#8c510a', '#f5f5f5', '#01665e'],
+  sun: ['#4d5a6b', '#f5f5f5', '#d98e04'],
+};
+const GRAY = '#d0d0d0';
+// Colours with enough contrast to be read on a light background.
+const VERDICT_COLOR = { yes: '#b91c1c', maybe: '#92400e', none: '#475569', insufficient: '#475569' };
+
+/**
+ * The verdict, stating which way the change goes. Without a direction, a chapter that
+ * asks "more or less water?" answered "yes, it is changing" and read the wrong way round.
+ */
+function verdictKey(result) {
+  const s = Math.sign(result.perDecade || 0);
+  if ((result.verdict === 'yes' || result.verdict === 'maybe') && s !== 0)
+    return `verdict.${result.verdict}.${s > 0 ? 'up' : 'down'}`;
+  return `verdict.${result.verdict}`;
+}
+
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const rgb2hex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+const mix = (a, b, k) => rgb2hex(hex2rgb(a).map((v, i) => v + (hex2rgb(b)[i] - v) * k));
+const isNum = (v) => v !== null && v !== undefined && Number.isFinite(v);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/**
+ * One colour per year, according to how far that year is from the series mean
+ * (symmetric scale of ±2 standard deviations). Years without data are shown in grey.
+ * @param {(number|null)[]} values  @param {'heat'|'water'|'sun'} palette  @returns {string[]} #rrggbb colours
+ */
+function stripeColors(values, palette) {
+  const [lo, mid, hi] = PALETTES[palette] || PALETTES.heat;
+  const nums = values.filter(isNum);
+  const mean = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+  const sd = nums.length ? Math.sqrt(nums.reduce((a, b) => a + (b - mean) ** 2, 0) / nums.length) : 0;
+  return values.map((v) => {
+    if (!isNum(v)) return GRAY;
+    const k = sd > 0 ? Math.max(-1, Math.min(1, (v - mean) / (2 * sd))) : 0;
+    return k < 0 ? mix(mid, lo, -k) : mix(mid, hi, k);
+  });
+}
+
+/** Number with the language's decimals and separator; `signed` prepends + or −. */
+function formatNum(x, decimals, lang, signed = false) {
+  const abs = Math.abs(x).toFixed(decimals);
+  const body = lang === 'en' ? abs : abs.replace('.', ',');
+  const zero = Number(abs) === 0;
+  const sign = !signed || zero ? (x < 0 && !zero ? '−' : '') : x < 0 ? '−' : '+';
+  return sign + body;
+}
+
+/** Rate per decade ready to show, e.g. "+0.3 °C per decade". */
+function formatRate(perDecade, unit, decimals, lang) {
+  return `${formatNum(perDecade, decimals, lang, true)} ${unit} ${t(lang, 'case.perDecade')}`;
+}
+
+/**
+ * Compares two cases variable by variable.
+ * `opposite` is true only if the signs differ AND both places have evidence of change.
+ */
+function compareRows(modelA, modelB) {
+  const evid = (v) => v === 'yes' || v === 'maybe';
+  const main = new Set(CHAPTERS.filter((c) => c.open).flatMap((c) => c.codes));
+  return modelA.rows.filter((r) => main.has(r.variable.code)).map((ra) => {
+    const rb = modelB.rows.find((r) => r.variable.code === ra.variable.code);
+    const a = { perDecade: ra.result.perDecade, verdict: ra.result.verdict };
+    const b = { perDecade: rb.result.perDecade, verdict: rb.result.verdict };
+    const both = evid(a.verdict) && evid(b.verdict);
+    const sa = Math.sign(a.perDecade), sb = Math.sign(b.perDecade);
+    return { variable: ra.variable, a, b, both, opposite: both && sa * sb < 0, same: both && sa * sb > 0 };
+  });
+}
+
+// --- HTML ---
+function stripesHtml(row, lang) {
+  const colors = stripeColors(row.annual, row.variable.palette);
+  const r = row.result, label = `${row.variable.name[lang]}: ${t(lang, verdictKey(r))}`;
+  const bars = colors.map((c, i) => `<i style="background:${c}" title="${row.years[i]}"></i>`).join('');
+  const first = row.years[0] ?? '', last = row.years.at(-1) ?? '';
+  return `<div class="stripes" role="img" aria-label="${esc(label)}, ${first}–${last}">${bars}</div><div class="stripe-axis"><span>${first}</span><span>${last}</span></div>`;
+}
+
+function chartSvg(row, lang) {
+  const pts = row.years.map((y, i) => [y, row.annual[i]]).filter(([, v]) => isNum(v));
+  if (pts.length < 2) return '';
+  const W = 600, H = 200, L = 46, R = 10, Tp = 10, B = 24;
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (y0 === y1) { y0 -= 1; y1 += 1; }
+  const X = (x) => L + ((x - x0) / (x1 - x0)) * (W - L - R), Y = (y) => Tp + (1 - (y - y0) / (y1 - y0)) * (H - Tp - B);
+  const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(y).toFixed(1)}`).join('');
+  // Trend line: the same Sen slope shown as the rate.
+  const r = row.result, clampY = (y) => Math.max(y0, Math.min(y1, y));
+  const trend = r.mk ? `<line x1="${X(x0)}" y1="${Y(clampY(r.intercept + r.sen * x0))}" x2="${X(x1)}" y2="${Y(clampY(r.intercept + r.sen * x1))}" class="trend"/>` : '';
+  const d = row.variable.decimals > 2 ? 2 : 1;
+  const num = (v) => formatNum(v, d, lang);
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${x0}–${x1}"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" class="axis"/>
+<text x="${L - 6}" y="${Y(y1) + 4}" text-anchor="end">${num(y1)}</text><text x="${L - 6}" y="${Y(y0) + 4}" text-anchor="end">${num(y0)}</text>
+<text x="${L}" y="${H - 6}">${x0}</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${x1}</text>
+<path d="${line}" class="series"/>${trend}</svg>`;
+}
+
+function birthHtml(row, lang) {
+  const b = row.birth;
+  if (!b) return '';
+  const unit = unitOf(row.variable, lang);
+  let body;
+  if (b.status === 'ok') {
+    const diff = `<strong>${formatNum(b.diff, row.variable.decimals, lang, true)} ${esc(unit)}</strong>`;
+    body = t(lang, 'birth.since', { from: b.fromYear, fromEnd: b.fromYear + 9, to0: b.toYear - 9, to: b.toYear, diff });
+    if (b.clamped) body += ` <span class="note">${t(lang, 'birth.clamped', { year: b.fromYear })}</span>`;
+  } else if (b.status === 'tooRecent') body = t(lang, 'birth.tooRecent', { year: b.fromYear });
+  else body = t(lang, 'birth.insufficient');
+  return `<p class="birth"><span class="birth-tag">${t(lang, 'birth.title')}</span> ${body}</p>`;
+}
+
+/** A full variable: stripes, rate, verdict and folded detail. */
+function rowHtml(row, lang, featured = false) {
+  const v = row.variable, r = row.result, unit = unitOf(v, lang);
+  const rate = r.verdict === 'insufficient'
+    ? `<p class="rate muted">${t(lang, 'case.noRate')}</p>`
+    : `<p class="rate"><strong>${esc(formatRate(r.perDecade, unit, v.decimals, lang))}</strong> <span class="muted">(${t(lang, 'case.range', { lo: formatNum(r.ci.lo * 10, v.decimals, lang, true), hi: formatNum(r.ci.hi * 10, v.decimals, lang, true) })})</span></p>`;
+  return `<article class="row${featured ? ' featured' : ''}">
+  <header><h4>${esc(v.name[lang])}</h4><span class="verdict" style="--vc:${VERDICT_COLOR[r.verdict]}" title="${esc(t(lang, `verdict.${r.verdict}.help`))}">${t(lang, verdictKey(r))}</span></header>
+  ${stripesHtml(row, lang)}
+  ${rate}
+  <p class="help muted">${t(lang, `verdict.${r.verdict}.help`)}</p>
+  ${v.caveat ? `<p class="caveat">${esc(v.caveat[lang])}</p>` : ''}
+  ${birthHtml(row, lang)}
+  <details><summary>${t(lang, 'case.chart')}</summary>
+    ${chartSvg(row, lang)}
+    ${r.mk ? `<p class="muted small">${t(lang, 'case.trendLine')} ${t(lang, 'case.stats', { n: r.n, p: r.mk.p < 0.001 ? `< ${formatNum(0.001, 3, lang)}` : formatNum(r.mk.p, 3, lang), r1: formatNum(r.r1, 2, lang) })}</p>` : ''}
+    <p><strong>${t(lang, 'case.what')}:</strong> ${esc(v.what[lang])}</p>
+    <p><strong>${t(lang, 'case.why')}:</strong> ${esc(v.why[lang])}</p>
+    <p class="muted">${t(lang, 'case.source', { source: esc(v.source) })}</p>
+  </details>
+</article>`;
+}
+
+/** The verdict pills in the chapter header, one per variable. */
+function chipsHtml(rows, lang) {
+  return `<ul class="chips-verdict">${rows.map((r) => `<li class="verdict small" style="--vc:${VERDICT_COLOR[r.result.verdict]}">${esc(r.variable.short[lang])}: ${t(lang, verdictKey(r.result))}</li>`).join('')}</ul>`;
+}
+
+/**
+ * The advice that follows the result. It changes with the verdict and its direction:
+ * the advice is not the same where water increases as where it is scarce, nor where
+ * there is no evidence of change. Short text and one icon each, to read at a glance.
+ */
+function adviceHtml(chapter, group, lang) {
+  if (!chapter.actions) return '';
+  const key = group.evidence && group.direction ? group.direction : 'none';
+  const list = chapter.actions[key] || chapter.actions.none || [];
+  if (!list.length) return '';
+  return `<section class="advice">
+  <h4>${t(lang, 'case.means')}</h4>
+  <ul class="actions">${list.map((a) => `<li><span class="act-icon" aria-hidden="true">${a.icon}</span>${esc(a[lang])}</li>`).join('')}</ul>
+  ${chapter.forWho ? `<p class="for-who"><b>${t(lang, 'case.forWho')}:</b> ${esc(chapter.forWho[lang])}</p>` : ''}
+  ${chapter.context ? `<details class="why"><summary>${t(lang, 'case.whyWorld')}</summary>
+    <p class="context"><b>${t(lang, 'case.context')}</b> ${esc(chapter.context[lang])}</p></details>` : ''}
+</section>`;
+}
+
+/** A full chapter. Secondary chapters arrive folded. */
+function chapterHtml(group, lang) {
+  const { chapter, rows, featured, state } = group;
+  if (!rows.length) return '';
+  const others = rows.filter((r) => r !== featured);
+  const head = `<header class="chapter-head"><h3><span class="chapter-icon" aria-hidden="true">${chapter.icon}</span> ${esc(chapter.name[lang])}</h3>
+  <p class="chapter-q">${esc(chapter.question[lang])}</p>${chipsHtml(rows, lang)}</header>`;
+  const body = `<div class="chapter-body">${featured ? rowHtml(featured, lang, true) : ''}
+  ${others.length ? `<details class="more"><summary>${t(lang, 'case.more')}</summary>${others.map((r) => rowHtml(r, lang)).join('')}</details>` : ''}
+  ${adviceHtml(chapter, group, lang)}</div>`;
+  if (chapter.open) return `<section class="chapter" data-chapter="${chapter.id}" data-state="${state}">${head}${body}</section>`;
+  return `<details class="chapter folded" data-chapter="${chapter.id}" data-state="${state}"><summary><span class="chapter-icon" aria-hidden="true">${chapter.icon}</span> ${esc(chapter.name[lang])} · <span class="muted">${esc(chapter.question[lang])}</span></summary>${body}</details>`;
+}
+
+/** Draws the full case file of a place inside `container`. */
+function renderCase(container, model, lang, { story = null } = {}) {
+  const period = model.period.from ? t(lang, 'case.period', model.period) : '';
+  container.innerHTML = `<section class="case">
+  <header class="case-head"><h2>${esc(model.place.label)}</h2>
+    <p class="muted small">${period} · NASA POWER</p>
+    <p class="summary">${t(lang, model.summary, model.period)}</p>
+    ${story ? `<p class="story">${esc(story)}</p>` : ''}</header>
+  ${model.chapters.map((g) => chapterHtml(g, lang)).join('')}
+  <details class="method"><summary>${t(lang, 'method.title')}</summary><p>${t(lang, 'method')}</p></details>
+  <p class="muted small">${t(lang, 'source')}</p>
+</section>`;
+}
+
+/** Draws the table that compares two places. */
+function renderCompare(container, modelA, modelB, lang) {
+  const rows = compareRows(modelA, modelB);
+  const cell = (row, x) => x.verdict === 'insufficient' ? `<td class="muted">—</td>`
+    : `<td><strong>${esc(formatRate(x.perDecade, unitOf(row.variable, lang), row.variable.decimals, lang))}</strong><br><span class="verdict small" style="--vc:${VERDICT_COLOR[x.verdict]}">${t(lang, verdictKey(x))}</span></td>`;
+  container.innerHTML = `<section class="compare"><h2>${t(lang, 'compare.title')}</h2>
+<table><thead><tr><td></td><th scope="col">${esc(modelA.place.label)}</th><th scope="col">${esc(modelB.place.label)}</th><td></td></tr></thead><tbody>
+${rows.map((r) => `<tr class="${r.opposite ? 'opposite' : ''}"><th scope="row">${esc(r.variable.name[lang])}</th>${cell(r, r.a)}${cell(r, r.b)}<td>${t(lang, r.opposite ? 'compare.opposite' : r.same ? 'compare.same' : 'compare.unclear')}</td></tr>`).join('')}
+</tbody></table></section>`;
+}
+
+/** Shows an error message (key of the text catalogue). */
+function renderError(container, key, lang, vars = {}) {
+  container.innerHTML = `<p class="error" role="alert">${esc(t(lang, key, vars))}</p>`;
+}
+
+/** Shows the loading notice. */
+function renderLoading(container, lang) {
+  container.innerHTML = `<p class="loading" role="status">${t(lang, 'loading')}</p>`;
+}
+
+/**
+ * Generates the image to share (1080×1350) by drawing the case file on a <canvas>.
+ * @returns {Promise<Blob>} PNG image
+ */
+/** Rounded-corner rectangle, for the panels of the image. */
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  if (g.roundRect) { g.roundRect(x, y, w, h, r); return; }
+  g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+
+/** Writes a text, splitting it into lines that fit the given width. */
+function wrapText(g, text, x, y, maxW, lh) {
+  let line = '';
+  for (const word of String(text).split(' ')) {
+    const probe = line ? `${line} ${word}` : word;
+    if (g.measureText(probe).width > maxW && line) { g.fillText(line, x, y); y += lh; line = word; }
+    else line = probe;
+  }
+  if (line) g.fillText(line, x, y);
+  return y + lh;
+}
+
+async function caseToPng(model, lang, siteUrl = '') {
+  const W = 1080, H = 1350, P = 56;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const INK = '#ffffff', SOFT = '#9fb0c0', MID = '#d7e0ea';
+  const tone = { yes: '#ff8a80', maybe: '#ffcc66', none: SOFT, insufficient: SOFT };
+
+  const panels = [];   // painted at the end, behind the content
+  g.fillStyle = INK; g.font = '600 28px system-ui, sans-serif'; g.fillText('Earth Trend Detective', P, 64);
+  g.font = '700 50px system-ui, sans-serif';
+  let title = model.place.label.split(',').slice(0, 2).join(',');
+  // The right-hand corner is left free for the team seal.
+  while (g.measureText(title).width > W - 2 * P - 150 && title.length > 4) title = title.slice(0, -2) + '…';
+  g.fillText(title, P, 128);
+  g.fillStyle = SOFT; g.font = '24px system-ui, sans-serif';
+  if (model.period.from) g.fillText(`${model.period.from}–${model.period.to} · NASA POWER`, P, 166);
+  g.fillStyle = MID; g.font = '600 27px system-ui, sans-serif';
+  let y = wrapText(g, t(lang, model.summary, model.period), P, 212, W - 2 * P, 34) + 16;
+
+  for (const group of model.chapters) {
+    const { chapter, featured } = group;
+    if (!chapter.open || !featured) continue;
+    const v = featured.variable, r = featured.result;
+    const top = y;
+
+    // Chapter colour bar, to the left of its panel.
+    g.fillStyle = chapter.tint; g.fillRect(P - 24, y + 6, 6, 40);
+    g.fillStyle = INK; g.font = '700 32px system-ui, sans-serif';
+    g.fillText(`${chapter.icon} ${chapter.name[lang].toUpperCase()}`, P, y + 26);
+    g.fillStyle = SOFT; g.font = '23px system-ui, sans-serif';
+    g.fillText(chapter.question[lang], P, y + 56);
+    y += 80;
+
+    // The chapter's main variable, with its stripes.
+    g.fillStyle = INK; g.font = '600 27px system-ui, sans-serif'; g.fillText(v.name[lang], P, y + 22);
+    g.fillStyle = tone[r.verdict]; g.font = '600 24px system-ui, sans-serif';
+    g.textAlign = 'right'; g.fillText(t(lang, verdictKey(r)), W - P, y + 22); g.textAlign = 'left';
+    const colors = stripeColors(featured.annual, v.palette), bw = (W - 2 * P) / Math.max(1, colors.length);
+    colors.forEach((col, i) => { g.fillStyle = col; g.fillRect(P + i * bw, y + 38, bw + 0.5, 46); });
+    y += 96;
+    if (r.verdict !== 'insufficient') {
+      g.fillStyle = MID; g.font = '600 26px system-ui, sans-serif';
+      const range = t(lang, 'case.range', { lo: formatNum(r.ci.lo * 10, v.decimals, lang, true), hi: formatNum(r.ci.hi * 10, v.decimals, lang, true) });
+      g.fillText(`${formatRate(r.perDecade, unitOf(v, lang), v.decimals, lang)}  (${range})`, P, y + 20);
+      y += 34;
+    }
+
+    const b = featured.birth;
+    if (b && b.status === 'ok') {
+      g.fillStyle = '#7dd3fc'; g.font = '600 23px system-ui, sans-serif';
+      const tag = `${t(lang, 'birth.title')} (${b.fromYear}): `;
+      g.fillText(tag, P, y + 20);
+      g.fillStyle = INK; g.font = '700 25px system-ui, sans-serif';
+      g.fillText(`${formatNum(b.diff, v.decimals, lang, true)} ${unitOf(v, lang)}`, P + g.measureText(tag).width + 6, y + 20);
+      y += 38;
+    }
+
+    // The advice that follows that result, in two columns.
+    const acts = chapter.actions ? (chapter.actions[group.evidence && group.direction ? group.direction : 'none'] || []) : [];
+    if (acts.length) {
+      g.fillStyle = '#7dd3fc'; g.font = '700 20px system-ui, sans-serif';
+      g.fillText(t(lang, 'case.means').toUpperCase(), P, y + 24);
+      y += 38;
+      const colW = (W - 2 * P) / 2 - 10;
+      let row = y;
+      acts.forEach((a, i) => {
+        const x = P + (i % 2) * (colW + 20);
+        if (i % 2 === 0 && i) row += 62;
+        g.fillStyle = 'rgba(148,163,184,0.12)';
+        g.fillRect(x, row, colW, 54);
+        g.font = '26px system-ui, sans-serif'; g.fillStyle = INK;
+        g.fillText(a.icon, x + 14, row + 36);
+        g.font = '22px system-ui, sans-serif'; g.fillStyle = MID;
+        let s = a[lang];
+        while (g.measureText(s).width > colW - 60 && s.length > 6) s = s.slice(0, -2) + '…';
+        g.fillText(s, x + 54, row + 35);
+      });
+      y = row + 54 + 22;
+    }
+    panels.push({ top: top - 16, bottom: y, tint: chapter.tint });
+    y += 34;
+  }
+
+  // The panels and the background go underneath everything already drawn.
+  g.globalCompositeOperation = 'destination-over';
+  for (const p of panels) {
+    g.fillStyle = 'rgba(148,163,184,0.10)';
+    roundRect(g, P - 32, p.top, W - 2 * (P - 32), p.bottom - p.top, 18); g.fill();
+  }
+  g.fillStyle = '#0f1720'; g.fillRect(0, 0, W, H);
+  g.globalCompositeOperation = 'source-over';
+
+  // Team seal, top right, with its name below.
+  const seal = await sealImage();
+  const S = 92, sx = W - P - S;
+  if (seal) g.drawImage(seal, sx, 28, S, S);
+  g.fillStyle = '#9ff3e6'; g.font = '700 15px system-ui, sans-serif';
+  g.textAlign = 'center';
+  TEAM.lines.forEach((line, i) => g.fillText(line, sx + S / 2, 28 + S + 20 + i * 18));
+  g.textAlign = 'left';
+
+  g.fillStyle = MID; g.font = '600 22px system-ui, sans-serif';
+  g.fillText(t(lang, 'disclaimer'), P, H - 104);
+  g.fillStyle = SOFT; g.font = '19px system-ui, sans-serif';
+  wrapText(g, `${t(lang, 'source')}${siteUrl ? ` · ${siteUrl}` : ''}`, P, H - 72, W - 2 * P, 26);
+  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+}
+
+/**
+ * app.js — Entry point: connects the page with the modules.
+ *
+ * Flow of a search:
+ *   1. geo.js    turns the text (or a point on the globe) into coordinates.
+ *   2. power.js  requests that point's data from NASA POWER and turns it into annual series.
+ *   3. model.js  applies the statistics (stats.js, heat.js) and "since you were born" (birth.js).
+ *   4. ui.js     draws the case file.
+ * The example cases follow the same path, but read data saved in data/demos/.
+ *
+ * The place is picked on a 3D globe (globe.js) or on the flat map, which deliver the same
+ * thing: a latitude and a longitude. If the globe cannot load, the flat map remains.
+ */
+
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  lang: 'en', demos: [], main: null, other: null, // opens in English; the button switches to Spanish
+  globe: null, map: null, marker: null, view: 'globe',
+  loading: false, error: null, errorVars: {},
+};
+
+function applyTexts() {
+  document.documentElement.lang = state.lang;
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(state.lang, el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(state.lang, el.dataset.i18nPlaceholder); });
+  document.querySelectorAll('[data-i18n-aria]').forEach((el) => { el.setAttribute('aria-label', t(state.lang, el.dataset.i18nAria)); });
+  $('lang').textContent = t(state.lang, 'lang.switch');
+  $('view-toggle').textContent = t(state.lang, state.view === 'globe' ? 'geo.flat' : 'geo.globe');
+  $('map-hint').textContent = t(state.lang, state.view === 'globe' ? 'search.globe' : 'search.map');
+  renderDemoButtons();
+}
+
+function renderDemoButtons() {
+  for (const [boxId, slot] of [['demo-buttons', 'main'], ['compare-demos', 'other']]) {
+    const box = $(boxId); box.innerHTML = '';
+    for (const d of state.demos) {
+      const b = document.createElement('button'); b.type = 'button';
+      b.textContent = labelOf(d.place, state.lang);
+      const s = document.createElement('span'); s.textContent = d.kind[state.lang]; b.appendChild(s);
+      b.addEventListener('click', () => loadDemo(d.id, slot));
+      box.appendChild(b);
+    }
+  }
+}
+
+const MAX_BIRTH = new Date().getFullYear();
+/** Year of birth typed by the user; null if empty or out of range. */
+const birthYear = () => {
+  const raw = $('birth').value.trim(), v = Number(raw);
+  return raw && Number.isInteger(v) && v >= 1900 && v <= MAX_BIRTH ? v : null;
+};
+const birthInvalid = () => $('birth').value.trim() !== '' && birthYear() === null;
+
+/** Redraws everything from the current state. */
+function draw() {
+  if (state.loading) renderLoading($('status'), state.lang);
+  else if (state.error) renderError($('status'), state.error, state.lang, state.errorVars);
+  else $('status').innerHTML = '';
+  if (state.main) {
+    renderCase($('case'), state.main.model, state.lang, { story: state.main.story?.[state.lang] });
+    $('tools').hidden = false;
+  }
+  if (state.main && state.other) renderCompare($('compare'), state.main.model, state.other.model, state.lang);
+  else $('compare').innerHTML = '';
+}
+function fail(key, vars) { state.loading = false; state.error = key; state.errorVars = vars; draw(); }
+
+/** Rebuilds a slot's model with the current language and year of birth. */
+function rebuild(slot) {
+  const s = state[slot];
+  if (!s) return;
+  s.model = buildCase(s.parsed, { ...s.place, label: labelOf(s.place, state.lang) }, birthYear());
+}
+
+function setSlot(slot, parsed, place, story = null) {
+  let model;
+  // If the calculation or the drawing fails, the user is told: the page never stays loading forever.
+  try { model = buildCase(parsed, { ...place, label: labelOf(place, state.lang) }, birthYear()); }
+  catch (e) { console.error(e); fail('error.api'); return; }
+  if (!hasData(model)) { fail('error.noData'); return; }
+  state[slot] = { parsed, place, story, model };
+  state.loading = false;
+  state.error = birthInvalid() ? 'error.birth' : null; state.errorVars = { max: MAX_BIRTH };
+  if (slot === 'main') { state.other = null; seq.other++; markPlace(place); }
+  try { draw(); } catch (e) { console.error(e); fail('error.api'); return; }
+  if (slot === 'other') $('compare').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Each search gets a number. If, when the response arrives, another search has already
+// been launched for the same slot, the old response is discarded (so it cannot overwrite the new one).
+const seq = { main: 0, other: 0 };
+
+async function loadPlace(place, slot = 'main', id = ++seq[slot]) {
+  state.loading = true; state.error = null; draw();
+  let json;
+  try { json = await fetchPower(place.lat, place.lon); }
+  catch (e) { if (id === seq[slot]) { console.error(e); fail('error.api'); } return; }
+  if (id !== seq[slot]) return;
+  setSlot(slot, parseAll(json), place);
+  // A tapped point arrives without a name: it gets one later, without making anyone wait.
+  if (!place.geo) nameLater(place, slot, id);
+}
+
+/** Requests the point's name and, if it arrives in time, puts it in the case file. */
+async function nameLater(place, slot, id) {
+  const lang = state.lang;
+  const name = await nameOfPoint(place.lat, place.lon, lang);
+  if (!name || id !== seq[slot] || lang !== state.lang || !state[slot]) return;
+  state[slot].place = { ...place, label: name, geo: true };
+  rebuild(slot);
+  draw();
+}
+
+function loadDemo(id, slot = 'main') {
+  const d = state.demos.find((x) => x.id === id);
+  if (!d) return;
+  seq[slot]++; // cancels any search in progress for this slot
+  setSlot(slot, d.parsed, d.place, d.story);
+}
+
+/**
+ * Suggestions while typing. It waits until the user stops typing
+ * (300 ms) and cancels the previous query, so as not to flood the service.
+ */
+const suggestions = new Map(); // label → { lat, lon, label }
+function wireSuggest(inputId, listId) {
+  let timer = null, ctrl = null;
+  $(inputId).addEventListener('input', () => {
+    clearTimeout(timer);
+    if (ctrl) ctrl.abort();
+    const q = $(inputId).value;
+    timer = setTimeout(async () => {
+      ctrl = new AbortController();
+      const found = await suggestPlaces(q, state.lang, { signal: ctrl.signal });
+      const list = $(listId);
+      list.innerHTML = '';
+      for (const s of found) {
+        suggestions.set(s.label, { ...s, geo: true });
+        const opt = document.createElement('option'); opt.value = s.label; list.appendChild(opt);
+      }
+    }, 300);
+  });
+}
+
+async function onSearch(inputId, slot) {
+  const q = $(inputId).value;
+  // The number is taken before any early return: that way an empty submit also cancels
+  // the previous search, and its late response cannot overwrite the error message.
+  const id = ++seq[slot];
+  if (!q.trim()) { fail('error.notFound'); return; }
+  state.loading = true; state.error = null; draw();
+  // If a suggestion was picked we already have its coordinates: no need to search again.
+  const picked = suggestions.get(q.trim());
+  if (picked) { await loadPlace(picked, slot, id); return; }
+  let place = null;
+  try { place = await searchPlace(q, state.lang); }
+  catch (e) { if (id === seq[slot]) { console.error(e); fail('error.search'); } return; }
+  if (id !== seq[slot]) return;
+  if (!place) { fail('error.notFound'); return; }
+  await loadPlace({ ...place, geo: true }, slot, id);
+}
+
+/* ---------- Picking the place: 3D globe or flat map ---------- */
+
+/** A tap on the globe or the map: same coordinates, same path. */
+function pick(lat, lon, place) {
+  const la = +lat.toFixed(2), lo = +(((lon + 540) % 360) - 180).toFixed(2);
+  loadPlace(place || { lat: la, lon: lo, label: `${la}, ${lo}` });
+}
+
+function initGlobe() {
+  state.globe = createGlobe($('globe'), {
+    places: state.demos.map((d) => ({ ...d.place, label: labelOf(d.place, state.lang) })),
+    onPick: (lat, lon, p) => (p ? loadDemoByPlace(p) : pick(lat, lon)),
+  });
+  if (!state.globe) { setView('map'); $('view-toggle').hidden = true; return; }
+  addEventListener('resize', () => state.globe.resize());
+}
+
+/** Tapping a globe marker opens that example case. */
+function loadDemoByPlace(p) {
+  const d = state.demos.find((x) => x.place.lat === p.lat && x.place.lon === p.lon);
+  if (d) loadDemo(d.id); else pick(p.lat, p.lon);
+}
+
+function initMap() {
+  if (!window.L || state.map) return;
+  state.map = L.map('map', { worldCopyJump: true }).setView([-10, -60], 2);
+  // Map built only from NASA layers (GIBS service): no API key required.
+  const gibs = (layer, matrix, ext) => `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${matrix}/{z}/{y}/{x}.${ext}`;
+  L.tileLayer(gibs('BlueMarble_ShadedRelief_Bathymetry', 'GoogleMapsCompatible_Level8', 'jpeg'), { maxNativeZoom: 8, maxZoom: 10, attribution: 'NASA GIBS' }).addTo(state.map);
+  L.tileLayer(gibs('Reference_Features', 'GoogleMapsCompatible_Level9', 'png'), { maxNativeZoom: 9, maxZoom: 10 }).addTo(state.map);
+  L.tileLayer(gibs('Reference_Labels', 'GoogleMapsCompatible_Level9', 'png'), { maxNativeZoom: 9, maxZoom: 10 }).addTo(state.map);
+  state.map.on('click', (e) => pick(e.latlng.lat, e.latlng.lng));
+}
+
+/** Switches between the globe and the flat map. The map is created the first time it is needed. */
+function setView(view) {
+  state.view = view;
+  const onGlobe = view === 'globe';
+  $('globe').hidden = !onGlobe;
+  $('map').hidden = onGlobe;
+  $('globe-zoom').hidden = !onGlobe;
+  if (!onGlobe) { initMap(); if (state.map) setTimeout(() => state.map.invalidateSize(), 50); }
+  else if (state.globe) state.globe.resize();
+  if (state.main) markPlace(state.main.place);
+  applyTexts();
+}
+
+/** Marks the picked place on the active view. */
+function markPlace(place) {
+  if (state.globe) { state.globe.setPicked(place.lat, place.lon); }
+  if (state.map) {
+    if (state.marker) state.marker.remove();
+    state.marker = L.marker([place.lat, place.lon]).addTo(state.map);
+    state.map.setView([place.lat, place.lon], Math.max(state.map.getZoom(), 5));
+  }
+}
+
+/* ---------- Language switch ---------- */
+
+let langSeq = 0;
+/**
+ * Place names that came from the search are requested again in the new language,
+ * so that the whole case file is in a single language. If the service fails, the
+ * existing name is kept.
+ */
+async function switchLang() {
+  state.lang = state.lang === 'es' ? 'en' : 'es';
+  const mine = ++langSeq, lang = state.lang;
+  for (const slot of ['main', 'other']) if (state[slot]) rebuild(slot);
+  applyTexts();
+  if (state.globe) state.globe.setMarks(state.demos.map((d) => ({ ...d.place, label: labelOf(d.place, lang) })));
+  draw();
+
+  for (const slot of ['main', 'other']) {
+    const s = state[slot];
+    if (!s?.place.geo) continue;
+    const name = await nameOfPoint(s.place.lat, s.place.lon, lang);
+    if (!name || mine !== langSeq || !state[slot]) continue;
+    state[slot].place = { ...state[slot].place, label: name };
+    rebuild(slot);
+  }
+  if (mine === langSeq) draw();
+}
+
+async function init() {
+  $('brand-seal').src = SEAL_URI; // team seal in the header
+  $('search').addEventListener('submit', (e) => { e.preventDefault(); onSearch('q', 'main'); });
+  $('compare-form').addEventListener('submit', (e) => { e.preventDefault(); onSearch('q2', 'other'); });
+  $('birth').addEventListener('change', () => {
+    for (const slot of ['main', 'other']) rebuild(slot);
+    state.error = birthInvalid() ? 'error.birth' : null; state.errorVars = { max: MAX_BIRTH };
+    draw();
+  });
+  $('lang').addEventListener('click', switchLang);
+  $('view-toggle').addEventListener('click', () => setView(state.view === 'globe' ? 'map' : 'globe'));
+  $('zoom-in').addEventListener('click', () => state.globe && state.globe.zoom(0.75));
+  $('zoom-out').addEventListener('click', () => state.globe && state.globe.zoom(1.35));
+  $('download').addEventListener('click', async () => {
+    if (!state.main) return;
+    const site = location.protocol === 'http:' || location.protocol === 'https:' ? location.host + location.pathname : '';
+    const blob = await caseToPng(state.main.model, state.lang, site);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'earth-trend-detective.png'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+  wireSuggest('q', 'places');
+  wireSuggest('q2', 'places2');
+  applyTexts();
+
+  try {
+    if (window.__DEMOS__) state.demos = window.__DEMOS__; // single-file version
+    else {
+      const idx = await (await fetch('data/demos/index.json')).json();
+      state.demos = await Promise.all(idx.map(async (d) => ({ ...d, ...(await (await fetch(`data/demos/${d.file}`)).json()) })));
+    }
+    renderDemoButtons();
+  } catch { /* no example cases: live search keeps working */ }
+
+  initGlobe();
+}
+init();
+
+})();</script>
+</body>
+</html>
